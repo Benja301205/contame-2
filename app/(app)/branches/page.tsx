@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { StoreIcon } from "lucide-react";
 import { createBranch } from "@/lib/actions/branches";
 import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { createClient } from "@/lib/supabase/server";
 import { BranchForm } from "@/components/branch-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 export default async function BranchesPage() {
   const profile = await getCurrentProfile();
@@ -24,9 +26,21 @@ export default async function BranchesPage() {
 
       <div className="space-y-2">
         {(branches ?? []).length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            {isAdmin ? "Todavía no hay sucursales." : "No tenés sucursales asignadas."}
-          </p>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <StoreIcon aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>
+                {isAdmin ? "Todavía no hay sucursales" : "No tenés sucursales asignadas"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {isAdmin
+                  ? "Creá la primera con el formulario de abajo."
+                  : "Pedile a tu admin que te asigne una sucursal."}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
         {(branches ?? []).map((branch) => (
           <Card key={branch.id} className="max-w-lg">

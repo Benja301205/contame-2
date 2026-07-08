@@ -19,16 +19,20 @@ export function LossHero({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">Este mes tu cadena perdió</p>
-      <p className="text-4xl font-bold text-primary sm:text-5xl">{formatMoney(total, currency)}</p>
+      <p className="text-sm text-balance text-muted-foreground">Este mes tu cadena perdió</p>
+      <p className="text-display font-bold tabular-nums text-primary">{formatMoney(total, currency)}</p>
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-        <span className="text-muted-foreground">
+        <span className="text-pretty text-muted-foreground">
           Pérdidas registradas por tus encargados:{" "}
-          <strong className="font-semibold text-foreground">{formatMoney(totalReal, currency)}</strong>
+          <strong className="font-semibold tabular-nums text-foreground">
+            {formatMoney(totalReal, currency)}
+          </strong>
         </span>
-        <span className="text-muted-foreground">
+        <span className="text-pretty text-muted-foreground">
           Pérdida estimada por reseñas negativas:{" "}
-          <strong className="font-semibold text-foreground">{formatMoney(totalEstimated, currency)}</strong>
+          <strong className="font-semibold tabular-nums text-foreground">
+            {formatMoney(totalEstimated, currency)}
+          </strong>
         </span>
       </div>
     </div>

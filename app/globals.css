@@ -46,6 +46,11 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Loop 9: único tamaño realmente nuevo de la escala tipográfica — el
+     resto (title=text-lg, body=text-sm, caption=text-xs) ya existe. */
+  --text-display: 2.75rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
 }
 
 :root {
@@ -86,6 +91,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: #16a34a;
+
+  /* Loop 9 — motion (Emil Kowalski): dos curvas custom, no una por componente. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 .dark {
@@ -131,5 +140,74 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/**
+ * Loop 9 — load orquestado del Panel (una vez por navegación, CSS-only).
+ * El héroe entra con delay 0 (es el LCP, no se lo bloquea); lo que sigue
+ * usa `--panel-enter-delay` en 50ms de paso, con un total de ~300ms
+ * (duración 150ms × 2 pasos de delay agrupados). `prefers-reduced-motion`
+ * mantiene el fade de opacity y elimina el movimiento (translateY).
+ */
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes panel-enter-reduced {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.panel-enter {
+  animation: panel-enter 150ms var(--ease-out-strong) both;
+  animation-delay: var(--panel-enter-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter {
+    animation-name: panel-enter-reduced;
+  }
+}
+
+/**
+ * Modal (native <dialog>): entrada centrada (excepción de Emil — los modales
+ * no son origin-aware, a diferencia de popovers/dropdowns) vía @starting-style,
+ * sin JS. Sin movimiento bajo prefers-reduced-motion: el <dialog> sigue
+ * abriendo/cerrando nativo, instantáneo.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  dialog.modal-pop {
+    transition:
+      opacity 240ms var(--ease-out-strong),
+      transform 240ms var(--ease-out-strong),
+      display 240ms allow-discrete,
+      overlay 240ms allow-discrete;
+  }
+
+  dialog.modal-pop::backdrop {
+    transition: opacity 240ms ease;
+  }
+
+  @starting-style {
+    dialog.modal-pop[open] {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+
+    dialog.modal-pop[open]::backdrop {
+      opacity: 0;
+    }
   }
 }

@@ -1,7 +1,9 @@
+import { MessageSquareOffIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { ReviewCard, type ReviewCardData } from "@/components/review-card";
 import { PROBLEM_CATEGORIES } from "@/lib/analysis/classify";
 import { categoryLabel } from "@/lib/labels";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 export default async function ReviewsPage({
   searchParams,
@@ -212,7 +214,15 @@ export default async function ReviewsPage({
 
       <div className="space-y-3">
         {cards.length === 0 && (
-          <p className="text-sm text-muted-foreground">No hay reseñas para estos filtros.</p>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessageSquareOffIcon aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle>No hay reseñas para estos filtros</EmptyTitle>
+              <EmptyDescription>Probá sacar algún filtro o ampliar el rango de fechas.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
         {cards.map((review) => (
           <ReviewCard key={review.id} review={review} />

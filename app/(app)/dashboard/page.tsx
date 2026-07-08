@@ -1,4 +1,6 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
+import { StoreIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { getPeriodWindows, parsePeriod, type Period } from "@/lib/dashboard/period";
@@ -6,7 +8,7 @@ import { buildHeatmap, ratingTrend, topCategoriesForBranch, type CategoryStat } 
 import { branchVerdict } from "@/lib/dashboard/verdict";
 import { currentMonthPeriod } from "@/lib/loss/period";
 import { PROBLEM_CATEGORIES } from "@/lib/analysis/classify";
-import { categoryLabel, sentimentLabel } from "@/lib/labels";
+import { categoryLabel, SENTIMENT_LABELS, sentimentLabel } from "@/lib/labels";
 import { formatRating } from "@/lib/format";
 import { CategoryBarChart } from "@/components/charts/category-bar";
 import { Heatmap } from "@/components/charts/heatmap";
@@ -15,9 +17,19 @@ import { LossRankingBars } from "@/components/loss/loss-ranking-bars";
 import { MethodologyModal } from "@/components/loss/methodology-modal";
 import { Stars } from "@/components/stars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 type RatingSummaryRow = { branch_id: string; avg_rating: number | null; review_count: number };
 type SentimentRow = { sentiment: string; review_count: number };
+
+/** Cada sentimiento ya tiene un significado semántico fijo en el resto de la
+ * UI (chips de review-card) — a diferencia de las categorías de problema,
+ * acá sí tiene sentido un color distinto por barra. */
+const SENTIMENT_CHART_COLORS: Record<string, string> = {
+  [SENTIMENT_LABELS.positive]: "#059669",
+  [SENTIMENT_LABELS.neutral]: "#a3a3a3",
+  [SENTIMENT_LABELS.negative]: "#dc2626",
+};
 
 const PERIODS: Period[] = [30, 90, 180];
 
@@ -142,8 +154,10 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {/* (a) La plata primero: héroe de pérdidas del mes, siempre arriba de todo. */}
-      <Card>
+      {/* (a) La plata primero: héroe de pérdidas del mes, siempre arriba de todo.
+          Nivel "elevated" (shadow-md + ring más marcado): esta card domina la página.
+          panel-enter sin delay: es el LCP, entra primero y sin esperar. */}
+      <Card className="panel-enter shadow-md ring-foreground/[0.08] sm:py-6">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="sr-only">Pérdidas del mes</CardTitle>
           <div />
@@ -179,17 +193,27 @@ export default async function DashboardPage({
       </Card>
 
       {branchList.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          Todavía no hay sucursales activas.{" "}
-          <Link href="/branches" className="underline underline-offset-2">
-            Creá la primera
-          </Link>{" "}
-          para empezar a ver patrones.
-        </p>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <StoreIcon aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle>Todavía no hay sucursales activas</EmptyTitle>
+            <EmptyDescription>
+              Creá la primera para empezar a ver patrones y pérdidas por sucursal.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Link href="/branches" className="text-sm underline underline-offset-2">
+            Crear sucursal
+          </Link>
+        </Empty>
       )}
 
       {/* (b) Veredicto por sucursal + (c) charts, dentro de cada card. */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div
+        className="panel-enter grid gap-4 md:grid-cols-2"
+        style={{ "--panel-enter-delay": "50ms" } as CSSProperties}
+      >
         {branchList.map((branch) => {
           const current = currentByBranch.get(branch.id);
           const previous = previousByBranch.get(branch.id);
@@ -200,7 +224,11 @@ export default async function DashboardPage({
           const top = topByBranch.get(branch.id) ?? [];
 
           return (
-            <Card key={branch.id} data-testid={`branch-card-${branch.id}`}>
+            <Card
+              key={branch.id}
+              data-testid={`branch-card-${branch.id}`}
+              className="transition-shadow duration-150 hover:shadow-md"
+            >
               <CardHeader>
                 <CardTitle>{branch.name}</CardTitle>
               </CardHeader>
@@ -269,20 +297,23 @@ export default async function DashboardPage({
         })}
       </div>
 
-      <Card className="w-full max-w-md">
+      <Card
+        className="panel-enter w-full max-w-md"
+        style={{ "--panel-enter-delay": "100ms" } as CSSProperties}
+      >
         <CardHeader>
           <CardTitle>Distribución de sentimiento</CardTitle>
         </CardHeader>
         <CardContent>
           {sentimentData.length > 0 ? (
-            <CategoryBarChart data={sentimentData} />
+            <CategoryBarChart data={sentimentData} colors={SENTIMENT_CHART_COLORS} />
           ) : (
             <p className="text-sm text-muted-foreground">Sin datos en el período.</p>
           )}
         </CardContent>
       </Card>
 
-      <Card className="w-fit">
+      <Card className="panel-enter w-fit" style={{ "--panel-enter-delay": "150ms" } as CSSProperties}>
         <CardHeader>
           <CardTitle>Problemas por sucursal</CardTitle>
         </CardHeader>
@@ -295,7 +326,10 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      <Card className="max-w-md">
+      <Card
+        className="panel-enter max-w-md"
+        style={{ "--panel-enter-delay": "150ms" } as CSSProperties}
+      >
         <CardContent className="py-4">
           <Link href="/dashboard/compliance" className="text-sm underline underline-offset-2">
             Cumplimiento de registros diarios

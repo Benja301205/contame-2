@@ -14,7 +14,7 @@ export function LossRankingBars({ items, currency }: { items: LossRankingItem[];
   const max = Math.max(1, ...totals);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-1">
       {items.map((item, i) => {
         const total = totals[i];
         return (
@@ -22,11 +22,11 @@ export function LossRankingBars({ items, currency }: { items: LossRankingItem[];
             key={item.branchId}
             href={`/branches/${item.branchId}`}
             data-testid={`loss-row-${item.branchId}`}
-            className="group block"
+            className="group -mx-2 block rounded-lg px-2 py-2 transition-colors duration-150 hover:bg-muted/60"
           >
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium group-hover:underline">{item.branchName}</span>
-              <span className="font-semibold">{formatMoney(total, currency)}</span>
+              <span className="font-semibold tabular-nums">{formatMoney(total, currency)}</span>
             </div>
             <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
               <div

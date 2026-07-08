@@ -1,5 +1,10 @@
 import { categoryLabel } from "@/lib/labels";
 
+/**
+ * Escala de un solo tono (guía de charts.csv para Heatmap/Intensity): más
+ * problemas = más intenso. Ámbar en vez del verde de marca a propósito —
+ * este chart señala "atención acá", y reservamos el verde para lo positivo.
+ */
 function colorFor(value: number, max: number): string {
   if (max === 0 || value === 0) return "bg-muted/40";
   const intensity = value / max;
@@ -20,7 +25,7 @@ export function Heatmap({ branchNames, categories, matrix }: HeatmapProps) {
   const max = Math.max(0, ...matrix.flat());
 
   return (
-    <table className="text-xs">
+    <table className="border-separate border-spacing-1 text-xs">
       <thead>
         <tr>
           <th className="p-1 text-left font-medium">Sucursal</th>
@@ -36,7 +41,10 @@ export function Heatmap({ branchNames, categories, matrix }: HeatmapProps) {
           <tr key={name}>
             <td className="p-1 font-medium whitespace-nowrap">{name}</td>
             {(matrix[i] ?? []).map((value, j) => (
-              <td key={j} className={`p-1 text-center ${colorFor(value, max)}`}>
+              <td
+                key={j}
+                className={`rounded-md p-1 text-center tabular-nums ${colorFor(value, max)}`}
+              >
                 {value || ""}
               </td>
             ))}

@@ -1,6 +1,6 @@
 # PROGRESS — Contame 2
 
-**MVP completo (loops 0-7) + Loop 8 de rediseño UX/UI, extensión aprobada.** Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de `PRD_Contame_MVP.md`.
+**MVP completo (loops 0-7) + Loop 8 (rediseño UX/UI) + Loop 9 (elevación estética), extensiones aprobadas.** Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de `PRD_Contame_MVP.md`.
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
@@ -13,6 +13,7 @@
 | 6 — Motor de pérdidas $ | ✅ completo | 2026-07-08 | Test-primero: fórmula validada a mano antes de escribir el motor |
 | 7 — Pulido, seed de demo y hardening | ✅ completo | 2026-07-08 | Lighthouse a11y: Dashboard 96, Check-in 100 (build de producción) |
 | 8 — Rediseño UX/UI (extensión) | ✅ completo | 2026-07-08 | Lighthouse a11y: Panel 100, Registro del día 100 (subió desde 96/95) |
+| 9 — Elevación estética (extensión) | ✅ completo | 2026-07-08 | Lighthouse a11y se mantiene en 100/100 tras el rediseño visual |
 
 ## Loop 0 — resumen
 
@@ -212,6 +213,27 @@ Alcance explícitamente limitado a UI/copy/estilos — sin tocar migraciones, el
 **Bug de contraste encontrado en el camino (no pedido, pero necesario para no bajar del umbral de Lighthouse):** el nuevo fondo gris de página bajó el contraste de `--muted-foreground` (heredado, ya anotado como deuda del Loop 7 en 96/100) por debajo de 4.5:1 en texto fuera de una card blanca — se oscureció a `#666666`. Las flechas de tendencia (`emerald-600`/`red-600`, 3.65:1 con blanco) pasaron a `-700`. Resultado neto: Lighthouse accesibilidad subió de 96/95 a **100/100 en Panel y Registro del día**, medido contra el build de producción con sesión autenticada real (mismo método del Loop 7: cookies de Playwright + `lighthouse --extra-headers`).
 
 **Tests:** 3 archivos unitarios nuevos (`format.test.ts`, `labels.test.ts`, `dashboard-verdict.test.ts`) + el test de dimensiones del chart. Se ajustaron los textos esperados en tests existentes al nuevo copy (`auth.spec.ts`, `dashboard.spec.ts`, `loss.spec.ts`, `checkin-wizard.spec.ts` — incluyendo el nuevo formato de plata con espacio no separable de `Intl.NumberFormat`) sin tocar la lógica que verifican. Suite completa: 124 unit/integration (Vitest) + 13 e2e (Playwright) en verde. `npm run build` sin errores ni warnings.
+
+## Loop 9 — resumen (extensión post-MVP, elevación estética)
+
+Alcance explícitamente limitado a estilos/tokens/componentes de presentación — sin tocar UX, copy ni lógica del Loop 8, ni migraciones/endpoints/motor/clasificador. Dirección de diseño fija: sobriedad premium B2B (Linear/Mercury/Stripe), no landing creativa. Prohibido glassmorphism, gradientes decorativos, asimetrías, fuentes display raras, animaciones lúdicas.
+
+**Skills consultadas antes de codear** (cargadas al inicio, como pidió el usuario): `shadcn` (workflow de componentes — usado para agregar `Empty` vía CLI en vez de reinventarlo), `emil-design-eng` (tablas de duración/easing de motion), `baseline-ui` (reglas de tipografía/animación/diseño), `tailwind-patterns` (tokenización CSS-first de v4), y `~/.claude/skills/ui-ux-pro-max/data/charts.csv` (guía tipo-de-dato → chart correcto).
+
+**Tokens nuevos** (`app/globals.css`): `--text-display` (2.75rem, único tamaño realmente nuevo — el resto de la escala ya existía en Tailwind) para el número héroe; `--ease-out-strong`/`--ease-in-out-strong` (curvas custom de Emil) para todo el motion. Sombras: sin tokens nuevos — se usa la escala default de Tailwind (`shadow-xs` para cards, `shadow-md`/`shadow-lg` para lo "elevated"), siguiendo la preferencia de `baseline-ui` de no reinventar antes que usar el default.
+
+**Qué se hizo (en el orden pedido):**
+- **(a) Capas/profundidad:** 3 niveles — page (fondo gris, sin sombra), card (`shadow-xs` + ring sutil, nuevo default en `components/ui/card.tsx`), elevated (héroe de pérdidas, modal de metodología: `shadow-md`/`shadow-lg` + ring más marcado). El héroe gana padding extra (`sm:py-6`) para dominar la página. Hover con `shadow-md` en las cards de sucursal y fondo `bg-muted/60` en las filas del ranking de pérdidas — ambos son elementos con acción (link a detalle).
+- **(b) Tipografía:** `--text-display` + `tabular-nums` en el número del héroe, el ranking de pérdidas y el heatmap (para que los números no "bailen"); `text-balance` en el copy corto del héroe, `text-pretty` en las líneas de desglose.
+- **(c) Charts** (validados contra `charts.csv`): tooltip propio (`components/charts/chart-tooltip.tsx`, estética de la UI en vez del blanco default de Recharts) reutilizado en barras y línea; `LabelList` con el valor al lado de cada barra ("Compare Categories" pide labels de valor); grilla más sutil (`stroke="var(--border)"`, solo horizontal u solo vertical según el chart); `TrendChart` pasó de línea sola a `AreaChart` con fill de marca al 15% ("Trend Over Time" de charts.csv); distribución de sentimiento mantiene su semáforo verde/gris/rojo a propósito (cada sentimiento ya tiene un significado fijo en toda la UI, a diferencia de las categorías de problema que comparten un solo color de marca).
+- **(d) Motion:** load orquestado del Panel, CSS-only, una vez por navegación (`.panel-enter` en `app/globals.css`) — el héroe entra con delay 0 (es el LCP, no se lo bloquea), el resto usa `--panel-enter-delay` en pasos de 50/100/150ms, con duración de 150ms por elemento → orquestación total de ~300ms. Modal de metodología con entrada `@starting-style` (scale 0.97→1 + opacity, 240ms, origen centrado — excepción de Emil para modales, no origin-aware como un popover). Botón: `scale(0.97)` en `:active` centralizado en `components/ui/button.tsx`, aplicado a `default`/`outline`/`secondary`/`ghost`/`destructive` pero **no** a `link` (un link que se encoge se ve raro). Todo el motion respeta `prefers-reduced-motion: reduce` (variante de keyframes sin `transform`, o directamente sin animación en el caso del modal).
+- **(e) Estados:** empty states tipográficos con el componente `Empty` de shadcn (agregado vía `npx shadcn add empty` — compatible con la versión instalada del registry, no hizo falta el fallback propio de 15 líneas que pidió el usuario por si fallaba) en las 3 pantallas con estado vacío de página completa (Panel sin sucursales, Sucursales sin sucursales, Reseñas sin resultados) — ícono Lucide `aria-hidden`, título, descripción y un solo CTA. Los empty states más chicos (sin problemas detectados en el período, sin datos en el gráfico) se dejaron como texto simple a propósito — usar el componente completo ahí sería ruido visual, no séñal.
+
+**Gate de validación por bloque** (como pidió el usuario, no solo al final): después de cada bloque se corrió la suite completa + build, y al cerrar el loop se invocó `web-design-guidelines` (guía de Vercel, fetcheada fresca) y `/fixing-accessibility` sobre los archivos tocados — sin hallazgos nuevos (íconos decorativos ya llevaban `aria-hidden`, el `<dialog>` nativo maneja foco/Escape/trap solo, no se agregaron controles icon-only sin label).
+
+**Lighthouse accesibilidad, contra el build de producción** (mismo método que en el Loop 7/8: cookies de Playwright + `lighthouse --extra-headers`): Panel 100/100, Registro del día 100/100, Reseñas 100/100 — se mantiene el 100/100 del Loop 8, ningún cambio visual bajó el score.
+
+**Tests:** ningún test de lógica tocado (regla de alcance del loop) — la suite completa (124 unit/integration + 13 e2e) sigue en verde tal cual, sin haber necesitado ajustar ningún assert de texto (Loop 9 no cambió copy). `npm run build` sin errores ni warnings.
 
 ## Decisiones tomadas
 - **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
