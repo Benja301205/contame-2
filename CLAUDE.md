@@ -13,7 +13,7 @@ Este proyecto se construye **loop por loop** siguiendo `PRD_Contame_MVP.md`. Ant
 - No inventar datos, endpoints ni tablas que no estén en el PRD. Lo que no está definido, se pregunta.
 
 ## Definition of Done de cada loop
-Criterios de aceptación cumplidos + tests del loop en verde + regresión de loops anteriores en verde + `npm run build` limpio. Al terminar: actualizar `PROGRESS.md` y **frenar a esperar confirmación humana** antes del siguiente loop.
+Criterios de aceptación cumplidos + tests del loop en verde + regresión de loops anteriores en verde + `npm run build` limpio. Al terminar: actualizar `PROGRESS.md`, **commitear y pushear** (un commit por loop; nunca incluir `.env*` ni `scratch/`), y **frenar a esperar confirmación humana** antes del siguiente loop.
 
 ## Correcciones dentro de un loop
 Alcance limitado: corregir solo lo necesario para que el loop actual cumpla sus criterios. No refactorizar otras partes del sistema.
