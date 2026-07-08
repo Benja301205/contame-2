@@ -1,6 +1,6 @@
 # PROGRESS — Contame 2
 
-**Loop actual: 5 (Dashboard de patrones) — pendiente de arrancar**
+**Loop actual: 6 (Motor de pérdidas $) — pendiente de arrancar**
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
@@ -9,7 +9,7 @@
 | 2 — Ingesta de reviews | ✅ completo | 2026-07-07/08 | Provider real: Apify (`compass/google-maps-reviews-scraper`) |
 | 3 — Análisis con Claude API | ✅ completo | 2026-07-08 | Modelo: `claude-haiku-4-5`. Eval real: 15/15 sentimiento, 15/15 categoría |
 | 4 — Check-in de compensaciones | ✅ completo | 2026-07-08 | Home del manager = `/checkin`; "hoy" en huso horario argentino |
-| 5 — Dashboard de patrones | ⏳ pendiente | — | — |
+| 5 — Dashboard de patrones | ✅ completo | 2026-07-08 | Carga real medida: ~1.2-1.4s con 5.000 reviews (umbral: <2s) |
 | 6 — Motor de pérdidas $ | ⏳ pendiente | — | — |
 | 7 — Pulido y demo | ⏳ pendiente | — | — |
 
@@ -121,6 +121,28 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - `tests/integration/rls-reviews.test.ts` y `tests/integration/rls-review-analysis.test.ts` (Loop 2/3) hacían `.select()` sin acotar por `branch_id`/`review_id` sobre tablas que crecen con el uso (`reviews`, `review_analysis`). Con muchos archivos de test corriendo y acumulando filas en la misma org durante una sesión larga, esas queries podían superar el límite default de PostgREST de 1.000 filas por respuesta y truncar el resultado antes de llegar a las filas puntuales que el test necesitaba — no era un bug de RLS, era la query del test. Se acotaron con `.in("branch_id"/"review_id", [...])`. El mismo patrón se aplicó preventivamente en `tests/integration/rls-checkins.test.ts` (nuevo, Loop 4).
 - **Flake real de infraestructura de tests:** con los archivos de test corriendo en paralelo (default de Vitest), muchas escrituras concurrentes contra la única instancia de Postgres local ocasionalmente hacían fallar un `upsert`/`update` puntual (ej. una de 25 filas en el test de batching del Loop 3), sin ningún bug de lógica — confirmado corriendo la suite 8+ veces seguidas en modo serial (`--no-file-parallelism`) sin una sola falla, contra ~1 de cada 8 corridas en paralelo. Se agregó `fileParallelism: false` a `vitest.config.ts`: los tests de integration comparten un recurso real compartido (la DB local), así que correr los archivos en serie es la config correcta, no un workaround — la suite sigue siendo rápida (~4-7s).
 
+## Loop 5 — resumen
+
+**Qué se hizo:**
+- `supabase/migrations/0006_views.sql`: no son vistas estáticas sino **funciones** (`branch_rating_summary`, `branch_rating_monthly`, `branch_category_stats`, `branch_severity_breakdown`, `org_sentiment_distribution`) porque el filtro de período (30/90/180 días) es dinámico — una vista no puede tomar parámetros. Ninguna lleva `security definer`: corren con los privilegios de quien las llama, así que la RLS de `reviews`/`review_analysis` ya las acota (un manager que las invoque solo vería datos de sus sucursales asignadas, igual que con una query directa). Índice nuevo `reviews(org_id, review_date)` para las queries de rango de fecha.
+- `branch_category_stats` devuelve, por sucursal y categoría, el conteo en el período actual **y** en el período anterior de igual longitud en una sola llamada (`count(*) filter (where ...)`), para no tener que pegarle dos veces a la base — alimenta el Top 5 por sucursal y el heatmap.
+- `lib/dashboard/period.ts`: `getPeriodWindows(period)` calcula los rangos `[start, end)` actual/anterior usando `todayInBuenosAires()` (el mismo helper del Loop 4, no uno nuevo) — mismo motivo que en checkins, "hoy" tiene que ser hora argentina en toda la app.
+- `lib/dashboard/transform.ts`: funciones puras (`computeTrend`, `ratingTrend`, `topCategoriesForBranch`, `buildHeatmap`) que transforman lo que devuelven las funciones SQL en la forma que consumen los componentes — testeadas sin tocar la DB.
+- `components/charts/{trend-chart,category-bar}.tsx` son `"use client"` (Recharts necesita DOM) y reciben la data ya agregada por props — el fetching queda en los server components (`app/(app)/dashboard/page.tsx`, `app/(app)/branches/[id]/page.tsx`). `components/charts/heatmap.tsx` es una tabla HTML simple (no usa Recharts, no necesita `"use client"`).
+- `app/(app)/dashboard/page.tsx`: reescrito por completo. Filtro de período vía `?period=`, tarjeta por sucursal (rating + flecha de tendencia, Top 5 problemas con tendencia y 2 reviews de ejemplo por categoría — matcheadas con `review_analysis!inner(...).contains(...)`, mismo patrón de filtro anidado que ya se había verificado a mano en el Loop 3), distribución de sentimiento org-wide, heatmap sucursal × categoría. Se mantuvo el link a "Cumplimiento de check-ins" del Loop 4.
+- `app/(app)/branches/[id]/page.tsx`: el PRD sugiere este mismo path para el "Detalle de sucursal" del Loop 5, pero ya era la página de edición del Loop 1 — se agregó la sección de detalle (evolución mensual de rating, breakdown por severidad, reviews críticas severidad 3) **arriba** del formulario de edición existente, en vez de reemplazarlo, para no perder esa funcionalidad. Sigue admin-only (redirige al manager a `/branches`, sin cambios ahí).
+- `scripts/seed-volume.ts` (`npm run seed:volume`): genera reviews + `review_analysis` **100% sintéticos en código**, sin llamar nunca a la API de Claude ni a Apify — 5 sucursales × 1.000 reviews = 5.000, cada sucursal con una categoría "dominante" (~70% de sus reviews negativas caen en esa categoría) para que el criterio 1 (patrones distinguibles por sucursal) sea verificable a simple vista. Corre en ~0.2s.
+- Tests: 15 unit nuevos (`transform.ts`, `period.ts`) + 5 integration nuevos (las 5 funciones SQL comparadas contra un cálculo manual sobre fixtures de fecha conocida) + 1 e2e nuevo (dashboard renderiza, cambiar el período de 180→30 días cambia el conteo mostrado).
+- Suite completa: 93 unit/integration + 10 e2e = 103 tests en verde. `npm run build` sin errores ni warnings.
+
+**Criterio de aceptación 4 (carga <2s con 5.000 reviews) — ✅ medido con datos reales el 2026-07-08:**
+- Se corrió `npm run seed:volume` (5.000 reviews sintéticas) y se midió la navegación completa a `/dashboard?period=180` como admin (login real + render completo, no solo la query SQL) con Playwright.
+- Las funciones SQL solas: 1-3ms cada una (`EXPLAIN`/`\timing` vía psql).
+- Carga de página end-to-end: **~1.2-1.4s** en 3 corridas (dev server sin optimizar de Next/Turbopack — en build de producción debería ser más rápido todavía). Umbral del criterio: <2s.
+- El test de medición no quedó en la suite permanente (no es una señal de CI confiable, depende del entorno) — el resultado queda documentado acá, siguiendo el mismo patrón que el eval del Loop 3. Los datos de volumen se borraron (`supabase db reset`) después de medir para no contaminar el resto de la suite.
+
+**Bug de un loop anterior encontrado en el camino:** el test nuevo de `org_sentiment_distribution` (única de las 5 funciones SQL que es org-wide, sin acotar por sucursal — es su diseño, alimenta el chart de sentimiento a nivel organización del dashboard) al principio asumía que su ventana de fechas fijas (junio 2026) no tendría otras filas — pero varios tests de loops anteriores reusan esas mismas fechas fijas como fixtures. Se corrigió capturando una base ANTES de insertar los fixtures del test y comparando por delta, no por igualdad exacta.
+
 ## Decisiones tomadas
 - **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
 - RLS: se usaron funciones `security definer` (`get_user_org_id`, `get_user_role`) en vez de subqueries directas contra `profiles` en su propia policy, para evitar la recursión infinita clásica de Supabase.
@@ -132,12 +154,15 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - El link de invitación de Supabase local no usa PKCE (`?code=`) sino flujo implícito (`#access_token=`); esto no está documentado en el PRD y se descubrió probando el flujo real contra Mailpit. Ver detalle en el resumen del Loop 1 arriba.
 - **"Días pendientes" no se persiste como filas `status='pending'`:** el estado `pending` del check de `checkins.status` existe en el schema (sección 8) pero el código de la app nunca inserta una fila con ese status — un día pendiente es simplemente la ausencia de fila para `(branch_id, checkin_date)`, calculada al vuelo por `getPendingBackfillDays`. Es más simple que pre-crear filas `pending` vía cron y evita inventar un job fuera de scope del loop; el enum sigue soportando `pending` por si un loop futuro necesita materializarlo.
 - `app/(app)/dashboard/compliance.tsx` (sugerido por el PRD) se implementó como `app/(app)/dashboard/compliance/page.tsx` — Next.js App Router no permite páginas con nombre de archivo arbitrario, tienen que llamarse `page.tsx` dentro de una carpeta con el segmento de ruta.
+- **`app/(app)/branches/[id]/page.tsx` combina detalle + edición en la misma página** en vez de reemplazar la del Loop 1: el PRD sugiere ese mismo path para el "Detalle de sucursal" del Loop 5, y ya era la página de editar sucursal del Loop 1 — se agregó arriba en vez de reemplazar, para no perder esa funcionalidad ni romper la regresión.
+- Funciones SQL del dashboard sin `security definer` a propósito (a diferencia de las funciones cross-tabla de loops anteriores): no cruzan RLS, son solo agregaciones sobre tablas donde el usuario que llama ya tiene acceso vía sus propias policies — más simple y sin el riesgo de sobre-exponer datos que tendría una función que bypasea RLS innecesariamente.
 
 ## Deuda técnica detectada
 - Ninguna bloqueante. A vigilar: la CLI de Supabase instalada (2.75.0) está desactualizada vs. la última (2.109.1); no se actualizó para no introducir cambios fuera de alcance del loop.
 - El componente `components/branch-form.tsx` no usa la validación pura de `lib/validation/branch.ts` en el cliente (la validación real ocurre en el server action + constraint de DB); `lib/validation/branch.ts` queda como utilidad testeada unitariamente y disponible para conectar a un formulario más rico si hace falta mejor UX en un loop de pulido.
 - Ninguna deuda pendiente sobre el criterio 2 — verificado con datos reales el 2026-07-08 (ver resumen del Loop 2).
 - `classifyBatch` (`lib/analysis/classify.ts`) no chequea `response.stop_reason === "max_tokens"`: si la respuesta se trunca por límite de tokens, el JSON queda incompleto y el error que se propaga (JSON.parse fallido o zod fallido) no deja claro que la causa fue truncamiento. No bloqueante — con lotes de 20 reviews y `max_tokens: 4096` hay margen de sobra — pero si en el futuro se sube el tamaño de lote o el `summary` se vuelve más largo, conviene detectar `stop_reason` explícitamente y dar un mensaje de error específico.
+- `app/(app)/dashboard/page.tsx` hace una query separada por cada par (sucursal, categoría del Top 5) para traer las 2 reviews de ejemplo — con 10 sucursales × 5 categorías serían hasta 50 queries en paralelo (`Promise.all`). Medido con 5 sucursales reales no fue un problema (carga total ~1.2-1.4s, bien debajo del umbral de 2s), pero si el número de sucursales activas crece mucho en producción, conviene reemplazarlo por una sola query con `DISTINCT ON`/lateral join en vez de N llamadas.
 
 ## Bloqueos
 - (ninguno pendiente — el bloqueo de Docker/Homebrew se resolvió con instalación manual del usuario)
