@@ -1,0 +1,52 @@
+[
+  {
+    "reviewId": "fixture-review-1",
+    "name": "María Gómez",
+    "stars": 5,
+    "text": "Excelente atención, la comida llegó rápido y caliente.",
+    "publishedAtDate": "2026-06-01T12:00:00.000Z",
+    "isLocalGuide": true,
+    "reviewerNumberOfReviews": 42,
+    "likesCount": 3
+  },
+  {
+    "reviewId": "fixture-review-2",
+    "name": "Juan Pérez",
+    "stars": 2,
+    "text": "La demora fue de más de 40 minutos y el plato vino frío.",
+    "publishedAtDate": "2026-06-03T09:30:00.000Z",
+    "isLocalGuide": false,
+    "reviewerNumberOfReviews": 5,
+    "likesCount": 1
+  },
+  {
+    "reviewId": "fixture-review-3",
+    "name": "Lucía Fernández",
+    "stars": 4,
+    "text": "Buena relación precio-calidad, volvería.",
+    "publishedAtDate": "2026-06-05T18:45:00.000Z",
+    "isLocalGuide": false,
+    "reviewerNumberOfReviews": 12,
+    "likesCount": 0
+  },
+  {
+    "reviewId": "fixture-review-4",
+    "name": "Carlos Ruiz",
+    "stars": 1,
+    "text": "Pedido incorrecto y mala atención del mozo.",
+    "publishedAtDate": "2026-06-07T21:10:00.000Z",
+    "isLocalGuide": true,
+    "reviewerNumberOfReviews": 87,
+    "likesCount": 5
+  },
+  {
+    "reviewId": "fixture-review-5",
+    "name": "Sofía Torres",
+    "stars": 5,
+    "text": "El mejor lugar de la zona, ambiente muy agradable.",
+    "publishedAtDate": "2026-06-10T14:20:00.000Z",
+    "isLocalGuide": false,
+    "reviewerNumberOfReviews": 3,
+    "likesCount": 2
+  }
+]

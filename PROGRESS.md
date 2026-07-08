@@ -1,20 +1,143 @@
 # PROGRESS — Contame 2
 
-**Loop actual: 0 (sin arrancar)**
+**Loop actual: 5 (Dashboard de patrones) — pendiente de arrancar**
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
-| 0 — Fundaciones (auth, RLS) | ⏳ pendiente | — | — |
-| 1 — Sucursales y usuarios | ⏳ pendiente | — | — |
-| 2 — Ingesta de reviews | ⏳ pendiente | — | Decidir Outscraper vs SerpAPI antes de arrancar |
-| 3 — Análisis con Claude API | ⏳ pendiente | — | — |
-| 4 — Check-in de compensaciones | ⏳ pendiente | — | — |
+| 0 — Fundaciones (auth, RLS) | ✅ completo | 2026-07-07 | — |
+| 1 — Sucursales y usuarios | ✅ completo | 2026-07-07 | — |
+| 2 — Ingesta de reviews | ✅ completo | 2026-07-07/08 | Provider real: Apify (`compass/google-maps-reviews-scraper`) |
+| 3 — Análisis con Claude API | ✅ completo | 2026-07-08 | Modelo: `claude-haiku-4-5`. Eval real: 15/15 sentimiento, 15/15 categoría |
+| 4 — Check-in de compensaciones | ✅ completo | 2026-07-08 | Home del manager = `/checkin`; "hoy" en huso horario argentino |
 | 5 — Dashboard de patrones | ⏳ pendiente | — | — |
 | 6 — Motor de pérdidas $ | ⏳ pendiente | — | — |
 | 7 — Pulido y demo | ⏳ pendiente | — | — |
 
+## Loop 0 — resumen
+
+**Qué se hizo:**
+- Scaffold Next.js 16 (App Router, TS, Turbopack) + Tailwind v4 + shadcn/ui.
+- `supabase/migrations/0001_core.sql`: `organizations`, `profiles` (role text + check constraint), función `security definer get_user_org_id()`/`get_user_role()` para evitar recursión de RLS sobre la propia tabla `profiles`, políticas RLS en ambas tablas, trigger `handle_new_user` que lee `org_id`/`role`/`full_name` desde `raw_user_meta_data` del usuario de `auth.users`.
+- `lib/supabase/{client,server,middleware}.ts` + `proxy.ts` (antes `middleware.ts`; Next 16 renombró la convención a `proxy.ts`, mismo comportamiento) protegiendo rutas: sin sesión → `/login`; `manager` bloqueado en `/settings` y `/dashboard` vía `lib/auth/route-access.ts` (helper puro y testeable).
+- `app/(auth)/login`, `app/(app)/layout.tsx` + `components/nav.tsx` (nombre, rol, org, logout), `app/(app)/page.tsx` (home con datos de cuenta), placeholders de `/dashboard` y `/settings`.
+- `scripts/seed.ts` (`npm run seed`): crea 2 orgs (Sabor Porteño, Delicias del Sur) + 1 admin y 1 manager por org vía Admin API con `user_metadata`, idempotente (no duplica si ya existen).
+- Tests: 9 unit/integration (Vitest) + 4 e2e (Playwright), todos en verde. `npm run build` sin errores ni warnings.
+
+**Auditoría de seguridad (post-cierre del loop):**
+- `supabase/config.toml`: `[auth] enable_signup = false` deshabilita el auto-registro público (`signUp()`); los usuarios solo se crean por Admin API (seed, e invitaciones en Loop 1). Se probó primero también poner `enable_signup = false` en `[auth.email]`, pero esa flag en esta versión de GoTrue apaga el proveedor de email completo (bloquea también el login por password, no solo el signup) — se dejó `[auth.email] enable_signup = true` y el control real de "no auto-registro" queda solo en `[auth] enable_signup`.
+- `supabase/migrations/0001_core.sql`: la policy de `update` sobre `profiles` ahora exige `with check (id = auth.uid() and org_id = get_user_org_id() and role = get_user_role())` — antes solo validaba `org_id`, lo que permitía que un usuario cambiara su propio `role` (auto-ascenso a admin). Se corrió `supabase db reset` + `npm run seed` para aplicarla.
+- 2 tests de regresión nuevos en `tests/integration/security-hardening.test.ts`: signUp con anon key falla (signups deshabilitados), y un manager que intenta actualizar su propio `role` a `admin` no logra cambiarlo (la policy lo bloquea, la fila sigue en `manager`).
+- Suite completa tras el fix: 11 unit/integration + 4 e2e = 15 tests en verde. `npm run build` sigue limpio.
+
+**Credenciales de seed (solo entorno local):** password `Contame123!` para `admin.sabor-porteno@contame.test`, `manager.sabor-porteno@contame.test`, `admin.delicias-del-sur@contame.test`, `manager.delicias-del-sur@contame.test`.
+
+## Loop 1 — resumen
+
+**Qué se hizo:**
+- `supabase/migrations/0002_branches.sql`: `branches`, `branch_managers`, `compensation_types` + RLS. Trigger `seed_compensation_types` que crea automáticamente los 6 tipos default (Descuento, Postre bonificado, Bebida bonificada, Devolución, Plato rehecho, Otro) al insertar una organización.
+- Funciones `security definer` nuevas: `is_manager_of_branch(branch_id)` y `get_branch_org_id(branch_id)` — necesarias porque las policies de `branches` y `branch_managers` se referencian mutuamente (branches necesita saber si el usuario es manager de esa fila; branch_managers necesita el org_id de la sucursal), lo que sin estas funciones dispara "infinite recursion detected in policy" (mismo patrón que `get_user_org_id` en el Loop 0, pero esta vez cruzado entre dos tablas en vez de una tabla contra sí misma).
+- Policy nueva de `update` en `organizations` (antes solo existía `select`): el admin puede editar la moneda de su propia org.
+- `app/api/invite/route.ts`: server-only, valida sesión + rol admin, usa `supabase.auth.admin.inviteUserByEmail` (service role, `lib/supabase/admin.ts`) con `org_id`/`role='manager'`/`full_name` en `user_metadata`, y asigna sucursales (`branch_managers`) si se pasan `branchIds`.
+- Flujo de invitación completo: el link de invite de Supabase local usa **flujo implícito** (`#access_token=...` en el fragmento de la URL, no `?code=`), así que `app/auth/callback/page.tsx` es un client component que lee el fragmento y llama `supabase.auth.setSession()` antes de redirigir a `/set-password` (`app/(auth)/set-password/page.tsx`), donde el usuario define su contraseña con `supabase.auth.updateUser({password})`.
+- `/auth/callback` se agregó como ruta pública en `lib/auth/route-access.ts` (`isPublicRoute`) porque el proxy corre antes de que el cliente pueda establecer la sesión desde el fragmento.
+- CRUD de sucursales (`app/(app)/branches`): admin crea/edita/desactiva vía server actions (`lib/actions/branches.ts`), manager ve la misma ruta pero solo lectura de sus sucursales asignadas (RLS lo filtra, la UI no muestra el form ni el link "Editar" si el rol no es admin).
+- Settings: `/settings` (moneda de la org vía `lib/actions/organization.ts`), `/settings/compensation-types` (costos unitarios default), `/settings/users` (lista de gerentes + sucursales asignadas, formulario de invitación).
+- Tests: 13 unit/integration nuevos (validación de sucursal, RLS de branches/branch_managers/organizations, unicidad de place_id, seed automático de compensation_types) + 1 e2e nuevo (flujo completo: admin crea sucursal → invita gerente → gerente sigue el link real capturado en Mailpit → setea contraseña → ve solo su sucursal).
+- Suite completa: 24 unit/integration + 5 e2e = 29 tests en verde. `npm run build` sin errores ni warnings.
+
+## Loop 2 — resumen
+
+**Provider real elegido: Apify.** Actor `compass/google-maps-reviews-scraper`, verificado hoy (2026-07-07): pricing pay-per-event **desde $0.30/1.000 reviews** — ~10x más barato que Outscraper (~$3/1.000). Motivos: costo, se reusa la cuenta de Apify que ya usa otro producto de Contame, y sus campos de salida (`isLocalGuide`, `reviewerNumberOfReviews`, `likesCount`) coinciden con los que va a necesitar el motor de pesos del análisis (probablemente Loop 6). No se descartó por costo/latencia a Outscraper/SerpAPI porque la decisión ya venía tomada por el usuario; se verificó que el actor y el pricing siguen vigentes antes de cablearlo.
+
+**Qué se hizo:**
+- `supabase/migrations/0003_reviews.sql`: `reviews` y `sync_jobs` con el schema exacto de la sección 8 del PRD (sin agregar columnas no definidas — ver nota sobre `isLocalGuide` etc. más abajo). RLS: `reviews` reusa `get_user_org_id`/`is_manager_of_branch` (admin ve todas las de su org, manager solo las de sus sucursales asignadas); `sync_jobs` es visible solo para el admin de la org (no está en el alcance de un manager ver el historial de corridas).
+- `lib/providers/reviews.ts` (interfaz `ReviewProvider`/`ProviderReview`), `lib/providers/mapping.ts` (`mapApifyReview`, función pura provider→schema interno, reutilizada por Mock y Apify), `lib/providers/mock.ts` (fixtures en `lib/providers/fixtures/reviews.json`), `lib/providers/apify.ts` (actor real vía `apify-client`), `lib/providers/index.ts` (`getReviewProvider()`: usa Apify solo si `REVIEW_PROVIDER=apify`, default Mock).
+- Lógica de sync extraída a `lib/sync/run-sync.ts` (sin `import "server-only"` a propósito, para poder testearla directo desde Vitest sin pasar por el contexto de request de Next) — recibe un `SupabaseClient` y un `ReviewProvider` ya resueltos, hace upsert con `onConflict: branch_id,provider_review_id` + `ignoreDuplicates: true` (el conteo de "nuevas" sale de las filas que `.select()` devuelve tras el upsert, ya que `DO NOTHING` no las incluye en el `RETURNING`), y registra cada corrida en `sync_jobs` sin que el error de una sucursal aborte las demás (try/catch por sucursal).
+- `app/api/sync-reviews/route.ts`: `POST` y `GET`, ambos exigiendo `Authorization: Bearer $CRON_SECRET` (ver "Cambio de scope" más abajo — inicialmente el `POST` aceptaba sesión admin para un botón en la UI, eso se revirtió). `GET` es para el cron de Vercel (solo dispara `GET`); `POST` es para `scripts/sync.ts`. `vercel.json` con cron diario a las 6am.
+- `app/(app)/reviews/page.tsx`: filtros por sucursal/rating/fecha (form GET con search params, sin JS), manager ve solo reviews de sus sucursales (RLS).
+- Tests: 9 unit/integration nuevos (mapeo provider→schema interno, sync con MockProvider + idempotencia + aislamiento de errores por sucursal + stats en `sync_jobs`, RLS de reviews/sync_jobs) + 1 e2e nuevo (sync disparada por endpoint con secret → reviews visibles en `/reviews`; ver detalle actualizado del e2e en "Cambio de scope").
+- Suite completa: 33 unit/integration + 6 e2e = 39 tests en verde. `npm run build` sin errores ni warnings.
+
+**Criterio de aceptación 2 — ✅ verificado con datos reales el 2026-07-08.**
+- Actor: Apify `compass/google-maps-reviews-scraper`.
+- Sucursal de prueba: "Quotidiano Bar de Pasta (Alto Palermo) - TEST" en la org Sabor Porteño, `google_place_id = ChIJoYu1IVvLvJURGumIGnomnxk` (cliente real de prueba).
+- Corrida vía `npm run sync -- --branch=<id>` (flujo real, `REVIEW_PROVIDER=apify` seteado puntualmente para la verificación, no como default del repo).
+- Resultado 1ª corrida: **200 reviews traídas, 200 nuevas** — `provider_review_id`s con el formato real de Google (base64, ej. `Ci9DQUlRQUNvZENodHljRjlvT2sxTTNy...`), nombres y texto reales en español, fechas recientes reales. `sync_jobs` quedó en `status='success'` con `stats={"fetched":200,"new":200}`.
+- Resultado 2ª corrida (misma sucursal, sin cambios): **0 nuevas, 200 traídas** — confirma idempotencia con datos reales (no solo con fixtures del Mock). El conteo de filas en `reviews` para esa sucursal se mantuvo en 200.
+- `mapApifyReview` no necesitó ningún ajuste: los campos que devolvió el actor (`reviewId`, `stars`, `text`, `publishedAtDate`, `name`) coincidieron exactamente con lo que esperaba `ApifyRawReview` — sin diffs ni parches.
+- Nota operativa: al terminar la verificación se volvió a dejar `REVIEW_PROVIDER=mock` en `.env.local` (default seguro del repo) para que la suite automática de tests no dispare llamadas reales/pagas a Apify. La sucursal y sus 200 reviews reales quedaron persistidas en la DB local como dato de prueba.
+
+### Cambio de scope (post-Loop 2, 2026-07-07): operaciones de APIs pagas reguladas por Contame, no por el admin del cliente
+
+Aprobado por el dueño del producto, documentado también en `PRD_Contame_MVP.md` sección 5 (flujo F1). **Motivo: control de costos de APIs pagas durante el MVP** — tanto la sync de reviews (Apify) como el análisis con Claude API del Loop 3 consumen dinero por uso, y no se quiere que el admin de una cadena cliente pueda disparar esas corridas libremente desde la UI.
+
+Cambios concretos sobre lo entregado en el cierre original del Loop 2:
+- Se eliminó el botón "Sincronizar ahora" de `/branches` y el componente `components/sync-button.tsx`.
+- `app/api/sync-reviews/route.ts` ya no acepta sesión de admin: `POST` y `GET` exigen `Authorization: Bearer $CRON_SECRET` exclusivamente. `POST` acepta `{orgId?, branchId?}` en el body para filtrar; `GET` (cron) siempre sincroniza todo.
+- `scripts/sync.ts` (`npm run sync -- --org=<id> --branch=<id>`) es la herramienta de operación interna: llama al endpoint con `CRON_SECRET` leído de `.env.local`.
+- **Bug encontrado al adaptar el e2e:** el `proxy.ts` interceptaba `/api/*` con la misma lógica de "sin sesión → redirect a /login" que usa para las páginas, así que una request a `/api/sync-reviews` sin cookies recibía un `200` con el HTML de `/login` en vez de un `401` JSON. Se agregó `/api` a `PUBLIC_PREFIXES` en `lib/auth/route-access.ts` — las rutas de API manejan su propia autorización (sesión para `/api/invite`, `CRON_SECRET` para `/api/sync-reviews`) y deben poder devolver JSON con el status correcto, no un redirect de página. Esto también corrige (aunque no se pedía explícitamente) el mismo problema latente en `/api/invite` sin sesión.
+- El e2e de sync (`tests/e2e/sync-reviews.spec.ts`) ya no hace click en un botón: dispara el endpoint directo con `page.request.post` + `Authorization: Bearer CRON_SECRET` (como haría el script), y verifica en la UI de `/reviews` (que sí ve el admin) que las reviews quedaron guardadas. Se agregó un segundo test: sin `CRON_SECRET` el endpoint devuelve 401.
+- `CRON_SECRET` se agregó a `.env.local` (valor generado localmente, no expuesto en este archivo). **Nota de seguridad de esta sesión:** el usuario había dejado `REVIEW_PROVIDER=apify` seteado en `.env.local` de un intento anterior de verificación manual — se revirtió a `mock` como default del repo, porque dejarlo en `apify` haría que cualquier corrida de la suite de tests dispare llamadas reales (y pagas) a Apify sin que nadie lo pida explícitamente.
+- Suite tras el cambio: sigue en 33 unit/integration + 7 e2e (se sumó el test de 401 sin secret) = 40 tests en verde. `npm run build` limpio.
+
+## Loop 3 — resumen
+
+**Decisiones de diseño (tomadas antes de implementar):**
+1. Modelo: `claude-haiku-4-5` (string exacto, sin sufijo de fecha). Costo estimado ~$1-2 USD por cliente de 1.500 reviews, one-time.
+2. Salida estructurada vía `output_config.format` (`type: json_schema`) en `messages.create` del SDK `@anthropic-ai/sdk` — no se le pide JSON por prompt. Catálogo de categorías como `enum`, `severity` como `enum [1,2,3]`, `additionalProperties: false` en todo el schema. El parser zod queda como validación secundaria (detecta categorías inventadas o campos faltantes que igual pasarían el schema si el modelo alucinara, y trunca `summary` a 120 caracteres ya que `maxLength` no está soportado por structured outputs de Anthropic).
+3. Batch de hasta 20 reviews por request; reviews con texto vacío se clasifican por rating sin llamar a la API (regla del Anexo B, código puro en `classifyByRatingOnly`): 1-2 negativo, 3 neutral, 4-5 positivo, `categories: []`.
+4. Prompt versionado en código (`lib/analysis/classify.ts`, constante `PROMPT_VERSION = "classify-v1"`), guardado junto al model id en `review_analysis.model` (formato `"claude-haiku-4-5:classify-v1"`).
+5. `ANTHROPIC_API_KEY` solo servidor. `/api/analyze` sigue la misma decisión de control de costos del Loop 2: solo `CRON_SECRET`, nunca sesión de admin.
+
+**Qué se hizo:**
+- `supabase/migrations/0004_analysis.sql`: `review_analysis` (schema exacto sección 8) + RLS vía funciones `security definer` nuevas `get_review_org_id`/`get_review_branch_id` (review_analysis no tiene org_id/branch_id propios — su PK es `review_id` — así que hace falta cruzar con `reviews` sin disparar la RLS de esa tabla, mismo patrón que en Loop 1).
+- `lib/analysis/classify.ts`: catálogo `PROBLEM_CATEGORIES`, `buildJsonSchema()`, `buildPrompt()`, `classifyByRatingOnly()`, `classifyBatch()`, y `parseClassifyResponse()` — el parser zod valida cada item del array `results` **individualmente**: una categoría inválida o un campo faltante en un item invalida solo ese item (queda en `invalid`), no tira el array completo.
+- `lib/analysis/run-analyze.ts` (mismo patrón que `run-sync.ts`: sin `server-only`, testeable directo con un cliente Anthropic mockeado): toma reviews `pending`, separa texto vacío (clasificación local) de texto real (batch de a 20), reintenta la llamada al modelo hasta 2 veces si falla por completo, y **matchea resultados por `review_id`** (nunca por posición) — si el modelo omite una review del lote, solo esa se marca `failed`, el resto del lote se guarda igual. El upsert en `review_analysis` usa `onConflict: "review_id"` (su PK), y como la query de reviews a procesar siempre filtra `analysis_status = 'pending'`, una review `done` nunca vuelve a entrar al batch — reprocesar el job no la duplica ni la pisa.
+- `app/api/analyze/route.ts`: mismo esquema de auth que `/api/sync-reviews` (solo `CRON_SECRET`). `scripts/sync.ts` ahora encadena una llamada a `/api/analyze` después de cada sync ("se dispara automáticamente al final de cada sync" se resolvió así, no dentro del route handler de sync, para no arriesgar que los tests/e2e de sync disparen llamadas reales a Claude). `vercel.json` suma un segundo cron a las 6:15am (15 min después del cron de sync) para la ejecución automática vía Vercel.
+- `components/review-card.tsx` + `/reviews` enriquecida: chips de sentimiento (color-coded), categorías, severidad, "menciona compensación"; filtros nuevos por sentimiento/categoría/severidad usando `review_analysis!inner(...)` cuando alguno de esos filtros está activo (se verificó a mano contra la DB real que el filtro anidado de PostgREST funciona antes de darlo por bueno).
+- Tests: 18 unit/integration nuevos (parser: JSON válido/malformado/categoría inválida/campo faltante/truncado de summary; `classifyByRatingOnly` por rango de rating; job con Anthropic mockeado: batch de a 20, fallas parciales por `review_id`, retry x2 con fallback a failed, nunca reprocesa `done`; RLS de `review_analysis` admin vs. manager — no pedida explícitamente por el loop pero agregada por consistencia con los loops anteriores).
+- Suite completa: 51 unit/integration + 7 e2e = 58 tests en verde. `npm run build` sin errores ni warnings.
+
+**Set dorado (`scripts/golden-set.ts`) y eval (`scripts/eval-classifier.ts`, `npm run eval:classifier`) — ✅ corrido contra la API real el 2026-07-08:**
+- 15 casos escritos a mano: demora (queja fuerte y mixta con elogio), comida fría (2 niveles de severidad), calidad de comida, elogios simples, atención, pedido incorrecto, limpieza, precio (queja y mixta), ambiente, ambigua sin problema puntual, mención de compensación con tono final positivo, y texto vacío.
+- **Resultado: sentimiento correcto 15/15 (umbral ≥13/15), categoría principal correcta 15/15 (umbral ≥12/15).** `mentions_compensation` (caso g14, solo informativo — no cuenta para el umbral pedido por el usuario porque el motor de pérdidas del Loop 6 depende de ese flag): detectado correctamente 1/1.
+- Output crudo de la API (incluyendo las respuestas de `messages.create` tal cual llegaron) guardado en `scratch/eval-results.json` (gitignored) para poder revisar sin volver a pegarle a la API si algún caso hubiera fallado el umbral — no hizo falta tocar el prompt.
+
+## Loop 4 — resumen
+
+**Qué se hizo:**
+- **Timezone compartido (`lib/checkins/today.ts`):** `todayInBuenosAires()` es el único punto de la app que decide "qué día es" para check-ins, usando `Intl.DateTimeFormat` con `timeZone: "America/Argentina/Buenos_Aires"`. Del lado de Postgres, `checkin_today()` (función SQL) hace `(now() at time zone 'America/Argentina/Buenos_Aires')::date` — no se puede compartir literalmente una función entre Node y Postgres, pero ambos lados usan la misma zona horaria como única fuente de verdad, documentado en ambos archivos. Sin esto, `current_date` en UTC haría que el día cambiara a las 21:00 hora argentina (3 horas antes de medianoche real), bloqueando la edición del check-in de "hoy" prematuramente — exactamente el bug que señaló el usuario antes de implementar.
+- `supabase/migrations/0005_checkins.sql`: `checkins` + `compensation_items` (schema exacto sección 8, `total` como columna generada `quantity * unit_cost`, `reason_category` con check constraint espejando el catálogo de `PROBLEM_CATEGORIES`). RLS con funciones `security definer` nuevas (`get_checkin_org_id`, `get_checkin_branch_id`, `get_checkin_manager_id`, `get_checkin_date`) para cruzar `compensation_items` con `checkins` sin recursión (mismo patrón que `review_analysis` en el Loop 3).
+- **Reglas de edición temporal en RLS** (no solo en la UI): `insert` permitido para `checkin_date` entre `checkin_today() - 7` y `checkin_today()` (habilita completar retroactivamente hasta 7 días atrás, ventana pedida explícitamente por el usuario); `update`/`delete` solo si `checkin_date = checkin_today()` — un check-in cargado hoy sigue editable hasta medianoche (hora argentina), uno backfillado de un día anterior queda bloqueado apenas se crea.
+- `lib/checkins/backfill.ts` (`getPendingBackfillDays`, pura) y `lib/checkins/totals.ts` (`calculateCheckinTotal`, pura).
+- `lib/actions/checkins.ts`: `submitCheckin` (upsert de `checkins` + reemplazo de `compensation_items`; array vacío = "no hubo compensaciones", un solo tap) y `markCheckinSkipped` (para el banner de días pendientes).
+- `components/checkin-day-panel.tsx` + `app/(app)/checkin/page.tsx`: wizard Sí/No → tipos de `compensation_types` de la org con cantidad/motivo/monto (monto prellenado `quantity × default_unit_cost`, recalculado automáticamente al cambiar cantidad, editable a mano); banner de días pendientes (hasta 7) con opción de completar o marcar "sin datos".
+- **La home del manager es `/checkin`:** `app/(app)/page.tsx` redirige ahí si `role === 'manager'` (el admin sigue viendo la pantalla de cuenta del Loop 0). El nav también apunta "Check-in" al mismo lugar para el manager. Esto es un cambio de comportamiento respecto al Loop 0/1, pedido explícitamente por el usuario para cumplir el criterio de aceptación 1 (mínima fricción) — los e2e de login de esos loops se actualizaron para esperar `/checkin` en vez de `/` cuando loguea un manager (no es una regresión real, es un cambio de expectativa documentado).
+- `app/(app)/dashboard/compliance/page.tsx` (admin): tabla sucursal × últimos 7 días, distingue "$monto" (completado con compensaciones), "$0" (completado, confirmado sin compensaciones) y "Sin datos" (pending o skipped) — criterio de aceptación 4.
+- Tests: 22 unit/integration nuevos (cálculo de totales, generación de días pendientes, **timezone con el escenario exacto de las 21hs que describió el usuario**, constraint de unicidad `(branch_id, checkin_date)`, RLS completa de checkins/compensation_items, ventana de 7 días en insert, bloqueo de update fuera del mismo día) + 1 e2e nuevo (wizard con 2 tipos de compensación → total correcto).
+- Suite completa: 73 unit/integration + 9 e2e = 82 tests en verde. `npm run build` sin errores ni warnings.
+
+**Bugs de loops anteriores encontrados y corregidos en el camino** (regla del proyecto: arreglar antes de seguir):
+- `tests/integration/rls-reviews.test.ts` y `tests/integration/rls-review-analysis.test.ts` (Loop 2/3) hacían `.select()` sin acotar por `branch_id`/`review_id` sobre tablas que crecen con el uso (`reviews`, `review_analysis`). Con muchos archivos de test corriendo y acumulando filas en la misma org durante una sesión larga, esas queries podían superar el límite default de PostgREST de 1.000 filas por respuesta y truncar el resultado antes de llegar a las filas puntuales que el test necesitaba — no era un bug de RLS, era la query del test. Se acotaron con `.in("branch_id"/"review_id", [...])`. El mismo patrón se aplicó preventivamente en `tests/integration/rls-checkins.test.ts` (nuevo, Loop 4).
+- **Flake real de infraestructura de tests:** con los archivos de test corriendo en paralelo (default de Vitest), muchas escrituras concurrentes contra la única instancia de Postgres local ocasionalmente hacían fallar un `upsert`/`update` puntual (ej. una de 25 filas en el test de batching del Loop 3), sin ningún bug de lógica — confirmado corriendo la suite 8+ veces seguidas en modo serial (`--no-file-parallelism`) sin una sola falla, contra ~1 de cada 8 corridas en paralelo. Se agregó `fileParallelism: false` a `vitest.config.ts`: los tests de integration comparten un recurso real compartido (la DB local), así que correr los archivos en serie es la config correcta, no un workaround — la suite sigue siendo rápida (~4-7s).
+
 ## Decisiones tomadas
-- (vacío)
+- **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
+- RLS: se usaron funciones `security definer` (`get_user_org_id`, `get_user_role`) en vez de subqueries directas contra `profiles` en su propia policy, para evitar la recursión infinita clásica de Supabase.
+- `role` en `profiles` es `text` con `check (role in ('admin','manager'))`, no enum de Postgres, para facilitar migraciones futuras (según sección 8 del PRD).
+- Test de RLS cross-org (`tests/integration/rls-profiles.test.ts`) usa un cliente anon autenticado con el JWT real de un usuario (signInWithPassword), no service role — verifica que ni consultando Supabase directo se filtren datos entre orgs, tal como pide el criterio de aceptación 2.
+- `middleware.ts` → `proxy.ts`: Next.js 16 deprecó la convención `middleware.ts` en favor de `proxy.ts` (mismo comportamiento, export renombrado de `middleware` a `proxy`). Se migró para dejar el build sin warnings.
+- Entorno local requirió instalar Docker Desktop (no estaba presente) para poder correr `supabase start`; quedó documentado por si se reproduce el setup en otra máquina.
+- **Discrepancia con la sección 8 del PRD (modelo de datos de referencia):** ahí `branches.google_place_id` figura como `unique` global. El criterio de aceptación 1 del Loop 1 pide explícitamente "único **por org**", así que se implementó `unique(org_id, google_place_id)` en vez de `unique` global — dos organizaciones distintas sí pueden cargar el mismo Place ID (por ejemplo, si migran de cadena o hay un error de carga en cada una), lo cual además es más realista que una unicidad global sin relación con el tenant. Se prioriza el criterio de aceptación explícito del loop sobre la referencia genérica de la sección 8.
+- El link de invitación de Supabase local no usa PKCE (`?code=`) sino flujo implícito (`#access_token=`); esto no está documentado en el PRD y se descubrió probando el flujo real contra Mailpit. Ver detalle en el resumen del Loop 1 arriba.
+- **"Días pendientes" no se persiste como filas `status='pending'`:** el estado `pending` del check de `checkins.status` existe en el schema (sección 8) pero el código de la app nunca inserta una fila con ese status — un día pendiente es simplemente la ausencia de fila para `(branch_id, checkin_date)`, calculada al vuelo por `getPendingBackfillDays`. Es más simple que pre-crear filas `pending` vía cron y evita inventar un job fuera de scope del loop; el enum sigue soportando `pending` por si un loop futuro necesita materializarlo.
+- `app/(app)/dashboard/compliance.tsx` (sugerido por el PRD) se implementó como `app/(app)/dashboard/compliance/page.tsx` — Next.js App Router no permite páginas con nombre de archivo arbitrario, tienen que llamarse `page.tsx` dentro de una carpeta con el segmento de ruta.
 
 ## Deuda técnica detectada
-- (vacío)
+- Ninguna bloqueante. A vigilar: la CLI de Supabase instalada (2.75.0) está desactualizada vs. la última (2.109.1); no se actualizó para no introducir cambios fuera de alcance del loop.
+- El componente `components/branch-form.tsx` no usa la validación pura de `lib/validation/branch.ts` en el cliente (la validación real ocurre en el server action + constraint de DB); `lib/validation/branch.ts` queda como utilidad testeada unitariamente y disponible para conectar a un formulario más rico si hace falta mejor UX en un loop de pulido.
+- Ninguna deuda pendiente sobre el criterio 2 — verificado con datos reales el 2026-07-08 (ver resumen del Loop 2).
+- `classifyBatch` (`lib/analysis/classify.ts`) no chequea `response.stop_reason === "max_tokens"`: si la respuesta se trunca por límite de tokens, el JSON queda incompleto y el error que se propaga (JSON.parse fallido o zod fallido) no deja claro que la causa fue truncamiento. No bloqueante — con lotes de 20 reviews y `max_tokens: 4096` hay margen de sobra — pero si en el futuro se sube el tamaño de lote o el `summary` se vuelve más largo, conviene detectar `stop_reason` explícitamente y dar un mensaje de error específico.
+
+## Bloqueos
+- (ninguno pendiente — el bloqueo de Docker/Homebrew se resolvió con instalación manual del usuario)

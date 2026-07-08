@@ -83,6 +83,8 @@ PROGRESS.md
 
 **F1 — Ingesta y análisis de reviews:** cron/manual → `ReviewProvider` trae reviews nuevas por sucursal → dedupe → se guardan `pending` → job de análisis llama a Claude API en lote → guarda sentimiento, categorías, severidad y flag de compensación mencionada.
 
+> **Cambio de scope aprobado (post-Loop 2, 2026-07-07):** "manual" acá ya no significa que el admin del cliente dispare la sync desde la UI. Las operaciones que consumen APIs pagas (sync de reviews con Apify; en el Loop 3, análisis con Claude API) quedan reguladas exclusivamente por el equipo de Contame — vía cron (Vercel) o herramientas internas (`scripts/sync.ts`, autenticadas con `CRON_SECRET`), nunca por acción directa del admin. Motivo: control de costos de APIs pagas durante el MVP. Ver detalle en PROGRESS.md (resumen del Loop 2).
+
 **F2 — Check-in diario del gerente:** el gerente entra (o recibe recordatorio) → responde el cuestionario del día: cantidad y motivo de descuentos, postres/bebidas bonificadas, devoluciones, platos rehechos, otros → se registran ítems con monto (real o estimado por costo unitario configurado).
 
 **F3 — Cuantificación de pérdidas:** motor que suma por sucursal/mes: (a) compensaciones reales del check-in, (b) pérdida estimada por reviews negativas (modelo simple y transparente, ver Loop 6). Ambas se muestran siempre separadas y con su método visible.
