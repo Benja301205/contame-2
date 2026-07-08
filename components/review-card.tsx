@@ -1,20 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProblemCategory, Sentiment } from "@/lib/analysis/classify";
-
-function Stars({ rating }: { rating: number }) {
-  return (
-    <span aria-label={`${rating} estrellas`}>
-      {"★".repeat(rating)}
-      {"☆".repeat(5 - rating)}
-    </span>
-  );
-}
-
-const SENTIMENT_LABEL: Record<Sentiment, string> = {
-  positive: "Positiva",
-  neutral: "Neutral",
-  negative: "Negativa",
-};
+import { categoryLabel, SEVERITY_DOT_CLASS, sentimentLabel, severityLabel } from "@/lib/labels";
+import { formatRating } from "@/lib/format";
+import { Stars } from "@/components/stars";
 
 const SENTIMENT_CLASS: Record<Sentiment, string> = {
   positive: "bg-emerald-100 text-emerald-800",
@@ -45,7 +33,10 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
       <CardContent className="space-y-2 py-4">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">{review.authorName ?? "Anónimo"}</span>
-          <Stars rating={review.rating} />
+          <span className="flex items-center gap-1.5">
+            <Stars rating={review.rating} />
+            <span className="text-xs text-muted-foreground">{formatRating(review.rating)}</span>
+          </span>
         </div>
         <p className="text-xs text-muted-foreground">
           {review.branchName} · {review.reviewDate}
@@ -57,15 +48,16 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${SENTIMENT_CLASS[review.analysis.sentiment]}`}
             >
-              {SENTIMENT_LABEL[review.analysis.sentiment]}
+              {sentimentLabel(review.analysis.sentiment)}
             </span>
             {review.analysis.categories.map((c) => (
               <span key={c} className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                {c}
+                {categoryLabel(c)}
               </span>
             ))}
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-              Severidad {review.analysis.severity}
+            <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+              <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY_DOT_CLASS[review.analysis.severity]}`} />
+              {severityLabel(review.analysis.severity)}
             </span>
             {review.analysis.mentionsCompensation && (
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">

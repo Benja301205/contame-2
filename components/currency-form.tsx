@@ -13,8 +13,8 @@ export function CurrencyForm({ currentCurrency }: { currentCurrency: string }) {
 
   return (
     <form action={formAction} className="flex items-end gap-3">
-      <div className="space-y-2">
-        <label htmlFor="currency" className="text-sm font-medium">
+      <div className="space-y-1">
+        <label htmlFor="currency" className="block text-sm font-medium">
           Moneda
         </label>
         <select
@@ -33,6 +33,7 @@ export function CurrencyForm({ currentCurrency }: { currentCurrency: string }) {
       <Button type="submit" disabled={pending}>
         {pending ? "Guardando..." : "Guardar"}
       </Button>
+      {state.success && <p className="text-sm text-emerald-700">✓ Guardado</p>}
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
     </form>
   );

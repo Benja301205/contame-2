@@ -9,6 +9,8 @@ import { CategoryBarChart } from "@/components/charts/category-bar";
 import { LossSummary } from "@/components/loss/loss-summary";
 import { LossBreakdown, type LossBreakdownItem } from "@/components/loss/loss-breakdown";
 import { MethodologyModal } from "@/components/loss/methodology-modal";
+import { categoryLabel, severityLabel } from "@/lib/labels";
+import { formatShortDayMonth } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -73,11 +75,14 @@ export default async function BranchDetailPage({
   }));
 
   const severity = ((severityRes.data as SeverityRow[] | null) ?? []).map((r) => ({
-    category: `Severidad ${r.severity}`,
+    category: severityLabel(r.severity),
     count: r.review_count,
   }));
 
   const criticalReviews = criticalRes.data ?? [];
+
+  const { data: organization } = await supabase.from("organizations").select("currency").single();
+  const currency = organization?.currency ?? "ARS";
 
   const { data: syncJobs } = await supabase
     .from("sync_jobs")
@@ -110,7 +115,7 @@ export default async function BranchDetailPage({
     total: Number(t.total),
   }));
   const byReason: LossBreakdownItem[] = (latestSnapshot?.method?.by_reason_category ?? []).map((r) => ({
-    label: r.reason_category,
+    label: categoryLabel(r.reason_category),
     total: Number(r.total),
   }));
 
@@ -156,6 +161,7 @@ export default async function BranchDetailPage({
           <MethodologyModal
             avgTicket={latestSnapshot?.method?.avg_ticket ?? null}
             affectedFactor={latestSnapshot?.method?.affected_factor ?? 1}
+            currency={currency}
           />
         </CardHeader>
         <CardContent className="space-y-4">
@@ -165,20 +171,21 @@ export default async function BranchDetailPage({
                 compensationTotal={Number(latestSnapshot.compensation_total)}
                 estimatedReviewLoss={Number(latestSnapshot.estimated_review_loss)}
                 avgTicketConfigured={latestSnapshot.method?.avg_ticket != null}
+                currency={currency}
               />
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">
-                  Evolución mensual — pérdida real
+                  Evolución mensual — pérdida registrada por encargados
                 </p>
-                <TrendChart data={realEvolution} valueLabel="Real" />
+                <TrendChart data={realEvolution} valueLabel="Registrada" />
               </div>
               <div>
                 <p className="mb-1 text-xs font-medium text-muted-foreground">
-                  Evolución mensual — pérdida estimada
+                  Evolución mensual — pérdida estimada por reseñas
                 </p>
                 <TrendChart data={estimatedEvolution} valueLabel="Estimada" />
               </div>
-              <LossBreakdown byType={byType} byReason={byReason} />
+              <LossBreakdown byType={byType} byReason={byReason} currency={currency} />
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -190,16 +197,16 @@ export default async function BranchDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Reviews críticas recientes (severidad 3)</CardTitle>
+          <CardTitle>Reseñas más graves recientes</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {criticalReviews.length === 0 && (
-            <p className="text-sm text-muted-foreground">No hay reviews críticas.</p>
+            <p className="text-sm text-muted-foreground">No hay reseñas graves.</p>
           )}
           {criticalReviews.map((r) => (
             <div key={r.id} className="text-sm">
               <p className="text-xs text-muted-foreground">
-                {r.author_name ?? "Anónimo"} · {r.review_date}
+                {r.author_name ?? "Anónimo"} · {formatShortDayMonth(r.review_date)}
               </p>
               <p>{r.text}</p>
             </div>
@@ -228,7 +235,7 @@ export default async function BranchDetailPage({
                 <p className="text-muted-foreground">En curso...</p>
               ) : (
                 <p>
-                  Sync ok — {job.stats?.new ?? 0} reviews nuevas ({job.stats?.fetched ?? 0} traídas)
+                  Sync ok — {job.stats?.new ?? 0} reseñas nuevas ({job.stats?.fetched ?? 0} traídas)
                 </p>
               )}
             </div>

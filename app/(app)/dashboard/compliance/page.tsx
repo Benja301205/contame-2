@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { todayInBuenosAires } from "@/lib/checkins/today";
+import { formatMoney, formatShortDayMonth } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function lastNDays(today: string, n: number): string[] {
@@ -17,6 +18,9 @@ export default async function CompliancePage() {
   const supabase = await createClient();
   const today = todayInBuenosAires();
   const days = lastNDays(today, 7);
+
+  const { data: organization } = await supabase.from("organizations").select("currency").single();
+  const currency = organization?.currency ?? "ARS";
 
   const { data: branches } = await supabase
     .from("branches")
@@ -48,13 +52,13 @@ export default async function CompliancePage() {
     const total = items.reduce((sum: number, i: { total: number } | null) => sum + (i?.total ?? 0), 0);
 
     return total > 0
-      ? { label: `$${total}`, className: "text-foreground font-medium" }
-      : { label: "$0", className: "text-emerald-700" };
+      ? { label: formatMoney(total, currency), className: "text-foreground font-medium" }
+      : { label: formatMoney(0, currency), className: "text-emerald-700" };
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Cumplimiento de check-ins</h1>
+      <h1 className="text-xl font-semibold">Cumplimiento de registros diarios</h1>
       <Card className="w-fit">
         <CardHeader>
           <CardTitle>Últimos 7 días</CardTitle>
@@ -66,7 +70,7 @@ export default async function CompliancePage() {
                 <th className="p-2 text-left">Sucursal</th>
                 {days.map((d) => (
                   <th key={d} className="p-2 text-center font-normal text-muted-foreground">
-                    {d.slice(5)}
+                    {formatShortDayMonth(d)}
                   </th>
                 ))}
               </tr>

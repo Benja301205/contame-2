@@ -73,6 +73,7 @@ test("el manager completa el check-in con 2 tipos de compensación y ve el total
   const totalLocator = todayPanel.getByText(/^Total: \$/);
   await expect(totalLocator).toBeVisible();
   const totalText = await totalLocator.textContent();
-  const total = Number(totalText!.replace("Total: $", ""));
+  // formatMoney usa Intl.NumberFormat es-AR: "$ 1.300" (espacio no separable + punto de miles).
+  const total = Number(totalText!.replace(/[^\d]/g, ""));
   expect(total).toBe(2 * 500 + 1 * 300);
 });

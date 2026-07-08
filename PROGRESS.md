@@ -1,6 +1,6 @@
 # PROGRESS — Contame 2
 
-**MVP completo — los 8 loops (0-7) del PRD están cerrados.** Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de `PRD_Contame_MVP.md`.
+**MVP completo (loops 0-7) + Loop 8 de rediseño UX/UI, extensión aprobada.** Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de `PRD_Contame_MVP.md`.
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
@@ -12,6 +12,7 @@
 | 5 — Dashboard de patrones | ✅ completo | 2026-07-08 | Carga real medida: ~1.2-1.4s con 5.000 reviews (umbral: <2s) |
 | 6 — Motor de pérdidas $ | ✅ completo | 2026-07-08 | Test-primero: fórmula validada a mano antes de escribir el motor |
 | 7 — Pulido, seed de demo y hardening | ✅ completo | 2026-07-08 | Lighthouse a11y: Dashboard 96, Check-in 100 (build de producción) |
+| 8 — Rediseño UX/UI (extensión) | ✅ completo | 2026-07-08 | Lighthouse a11y: Panel 100, Registro del día 100 (subió desde 96/95) |
 
 ## Loop 0 — resumen
 
@@ -191,6 +192,27 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - Test unitario nuevo para `lib/rate-limit.ts` (permite hasta el límite, rechaza al superarlo, claves distintas no comparten contador).
 - **Lighthouse accesibilidad, medido contra el build de producción** (`npm run build` + `npm run start`, no el dev server, tal como pidió el usuario) usando una sesión autenticada real (cookies de Supabase extraídas con Playwright y pasadas a Lighthouse vía `--extra-headers`): **Dashboard 96/100, Check-in 100/100** (umbral: ≥90). Único audit que no llega a 100 en el dashboard: `color-contrast` — no bloqueante (96 > 90), queda anotado en deuda técnica.
 
+## Loop 8 — resumen (extensión post-MVP, rediseño UX/UI)
+
+Alcance explícitamente limitado a UI/copy/estilos — sin tocar migraciones, el motor de pérdidas ni el clasificador. Audiencia objetivo: dueños y gerentes gastronómicos no técnicos. Principios: cero jerga, cero datos crudos, la plata primero.
+
+**Fundaciones:**
+- **Bug real (fundacional, arreglado primero):** la card "Distribución de sentimiento" del dashboard colapsaba a ~32px — `<Card className="w-fit">` envolvía un `ResponsiveContainer width="100%"` de Recharts, y un padre `w-fit` sin contenido propio colapsa a 0 antes de que el chart mida su contenedor. Fix: `w-full max-w-md`. Test nuevo que mide `getBoundingClientRect()` del `.recharts-responsive-container` renderizado (no solo "el texto está visible", que no detecta este tipo de bug).
+- **Tipografía:** `--font-sans: var(--font-sans)` en `app/globals.css` era autorreferencial — nunca apuntaba a `--font-geist-sans` (la variable real inyectada por `next/font` en `layout.tsx`), por eso el sitio caía al serif default del navegador pese a tener Geist "configurado". Fix de una línea: `--font-sans: var(--font-geist-sans)`.
+- **Tema de marca:** verde `#166534` como `--primary` (contraste 7.13:1 con blanco, botones/links/foco/nav activo), verde-lima `#65a30d` como acento de charts (`lib/theme.ts`). Fondo de página gris muy claro (`oklch(0.97 0.004 247)`) para que las cards blancas se despeguen.
+- `lib/labels.ts`: diccionario central de categorías, severidad (con semáforo de color) y sentimiento. `lib/format.ts`: `formatMoney` (Intl.NumberFormat es-AR), `formatRating` ("2,1 de 5"), `formatHumanDate` ("Hoy, miércoles 8 de julio" / "8 jul 2026"), `formatShortDayMonth`.
+
+**Por pantalla:**
+- **Panel** (rename de "Dashboard", el admin aterriza acá directo — `/` ahora es un redirect puro según rol, sin pantalla de cuenta intermedia): reordenado a (a) héroe de pérdidas del mes arriba de todo (`components/loss/loss-hero.tsx`, única pantalla que suma real+estimada, siempre con desglose debajo — decisión explícita del dueño del producto), sucursales de mayor a menor pérdida con barra comparativa (`components/loss/loss-ranking-bars.tsx`); (b) veredicto en una frase por sucursal generado por reglas sin LLM (`lib/dashboard/verdict.ts`); (c) charts, ahora con categorías traducidas. Ratings con estrellas (`components/stars.tsx`, compartido con `review-card.tsx`) + "2,1 de 5"; cambio de rating en 0 → "sin cambios" en gris, nunca flecha en cero.
+- **Reseñas** (rename de "Reviews"): contador arriba ("214 reseñas · 78 negativas"), filtros esenciales (Sucursal, Sentimiento) siempre visibles, el resto colapsado en `<details>` "Más filtros" (7 filtros de entrada eran parálisis de decisión — se abre solo si alguno de esos filtros ya está activo). Categorías traducidas en el select y en los chips de `review-card.tsx`.
+- **Registro del día** (rename de "Check-in"): estado binario arriba por sucursal ("✓ Ya cargaste las compensaciones de hoy" / "Te falta cargar el día de hoy"), fecha humana, "Te faltan N días anteriores" con la lista completa (no solo el estado de hoy). Motivo traducido, montos con `formatMoney`.
+- **Configuración:** ayuda inline para Ticket promedio y Factor de clientes afectados (lenguaje llano, sin jerga de negocio), feedback visible al guardar (antes no había ninguna confirmación — `state.success` nuevo en `OrgActionResult`), texto de `google_place_id` reescrito, fix de labels pegados a inputs (`currency-form.tsx` sin `block` — mismo patrón de bug que el wizard de check-in en el Loop 7, esta vez en Configuración y en los 7 filtros de Reseñas).
+- Heatmap → "Problemas por sucursal" con columnas traducidas. Detalle de sucursal: gravedad y motivo traducidos, fechas ISO crudas reemplazadas, moneda de la org propagada a todos los componentes de plata.
+
+**Bug de contraste encontrado en el camino (no pedido, pero necesario para no bajar del umbral de Lighthouse):** el nuevo fondo gris de página bajó el contraste de `--muted-foreground` (heredado, ya anotado como deuda del Loop 7 en 96/100) por debajo de 4.5:1 en texto fuera de una card blanca — se oscureció a `#666666`. Las flechas de tendencia (`emerald-600`/`red-600`, 3.65:1 con blanco) pasaron a `-700`. Resultado neto: Lighthouse accesibilidad subió de 96/95 a **100/100 en Panel y Registro del día**, medido contra el build de producción con sesión autenticada real (mismo método del Loop 7: cookies de Playwright + `lighthouse --extra-headers`).
+
+**Tests:** 3 archivos unitarios nuevos (`format.test.ts`, `labels.test.ts`, `dashboard-verdict.test.ts`) + el test de dimensiones del chart. Se ajustaron los textos esperados en tests existentes al nuevo copy (`auth.spec.ts`, `dashboard.spec.ts`, `loss.spec.ts`, `checkin-wizard.spec.ts` — incluyendo el nuevo formato de plata con espacio no separable de `Intl.NumberFormat`) sin tocar la lógica que verifican. Suite completa: 124 unit/integration (Vitest) + 13 e2e (Playwright) en verde. `npm run build` sin errores ni warnings.
+
 ## Decisiones tomadas
 - **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
 - RLS: se usaron funciones `security definer` (`get_user_org_id`, `get_user_role`) en vez de subqueries directas contra `profiles` en su propia policy, para evitar la recursión infinita clásica de Supabase.
@@ -212,8 +234,9 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - `classifyBatch` (`lib/analysis/classify.ts`) no chequea `response.stop_reason === "max_tokens"`: si la respuesta se trunca por límite de tokens, el JSON queda incompleto y el error que se propaga (JSON.parse fallido o zod fallido) no deja claro que la causa fue truncamiento. No bloqueante — con lotes de 20 reviews y `max_tokens: 4096` hay margen de sobra — pero si en el futuro se sube el tamaño de lote o el `summary` se vuelve más largo, conviene detectar `stop_reason` explícitamente y dar un mensaje de error específico.
 - `app/(app)/dashboard/page.tsx` hace una query separada por cada par (sucursal, categoría del Top 5) para traer las 2 reviews de ejemplo — con 10 sucursales × 5 categorías serían hasta 50 queries en paralelo (`Promise.all`). Medido con 5 sucursales reales no fue un problema (carga total ~1.2-1.4s, bien debajo del umbral de 2s), pero si el número de sucursales activas crece mucho en producción, conviene reemplazarlo por una sola query con `DISTINCT ON`/lateral join en vez de N llamadas.
 - Warning de consola (no funcional, no bloqueante): "Base UI: A component is changing the default value state of an uncontrolled FieldControl after being initialized" en `LossParamsForm` — aparece porque `revalidatePath("/settings")` re-renderiza el formulario con un `defaultValue` distinto después de guardar. Cosmético; para eliminarlo habría que convertir esos inputs a controlados, no se justificó el esfuerzo en este loop.
-- Lighthouse accesibilidad del dashboard (96/100, por encima del umbral de 90) señala un audit de `color-contrast` sin resolver — algún texto/fondo por debajo del contraste mínimo recomendado. No bloqueante para el criterio del Loop 7, pero si se prioriza accesibilidad AA estricta en un loop futuro, conviene revisar los tonos de `text-muted-foreground` sobre fondos claros.
+- ~~Lighthouse accesibilidad del dashboard (96/100)... `color-contrast` sin resolver~~ — **resuelto en el Loop 8**: `--muted-foreground` oscurecido y flechas de tendencia a `-700`, Panel y Registro del día ahora en 100/100.
 - Rate limit en memoria (`lib/rate-limit.ts`) es por-instancia en serverless, no un límite global — ver limitación documentada en `README.md` y en el resumen del Loop 7. Migrar a Upstash/Redis si algún día importa un límite real compartido entre instancias.
+- El héroe de pérdidas del Panel (Loop 8) suma pérdida real + estimada en un único número — es una excepción explícita a la regla del Loop 6 ("nunca sumar real y estimada"), aprobada por el dueño del producto, y solo aplica a esa pantalla. `LossSummary`/`LossBreakdown` (detalle de sucursal) siguen mostrando las dos cifras siempre separadas.
 
 ## Bloqueos
 - (ninguno pendiente — el bloqueo de Docker/Homebrew se resolvió con instalación manual del usuario)

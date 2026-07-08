@@ -1,3 +1,5 @@
+import { categoryLabel } from "@/lib/labels";
+
 function colorFor(value: number, max: number): string {
   if (max === 0 || value === 0) return "bg-muted/40";
   const intensity = value / max;
@@ -24,7 +26,7 @@ export function Heatmap({ branchNames, categories, matrix }: HeatmapProps) {
           <th className="p-1 text-left font-medium">Sucursal</th>
           {categories.map((c) => (
             <th key={c} className="p-1 text-center font-normal text-muted-foreground">
-              {c}
+              {categoryLabel(c)}
             </th>
           ))}
         </tr>

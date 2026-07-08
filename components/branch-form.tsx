@@ -42,16 +42,7 @@ export function BranchForm({
           defaultValue={defaultValues?.google_place_id}
         />
         <p className="text-xs text-muted-foreground">
-          Buscá tu sucursal en{" "}
-          <a
-            className="underline"
-            href="https://developers.google.com/maps/documentation/places/web-service/place-id"
-            target="_blank"
-            rel="noreferrer"
-          >
-            este buscador de Place ID
-          </a>{" "}
-          y pegá el código acá.
+          Es el código de tu local en Google Maps — pedíselo a tu contacto de Contame.
         </p>
       </div>
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}

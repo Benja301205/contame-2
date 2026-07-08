@@ -2,6 +2,7 @@ import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { createClient } from "@/lib/supabase/server";
 import { todayInBuenosAires } from "@/lib/checkins/today";
 import { getPendingBackfillDays } from "@/lib/checkins/backfill";
+import { formatHumanDate } from "@/lib/format";
 import { CheckinDayPanel, type ExistingCheckin } from "@/components/checkin-day-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -55,10 +56,10 @@ export default async function CheckinPage() {
     return (
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle>Check-in</CardTitle>
+          <CardTitle>Registro del día</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          El check-in diario lo completa el gerente de cada sucursal.
+          El registro diario lo completa el gerente de cada sucursal.
         </CardContent>
       </Card>
     );
@@ -76,13 +77,16 @@ export default async function CheckinPage() {
     .eq("is_active", true)
     .order("name");
 
+  const { data: organization } = await supabase.from("organizations").select("currency").single();
+  const currency = organization?.currency ?? "ARS";
+
   const today = todayInBuenosAires();
 
   if (!branches || branches.length === 0) {
     return (
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle>Check-in</CardTitle>
+          <CardTitle>Registro del día</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           No tenés sucursales asignadas.
@@ -107,17 +111,31 @@ export default async function CheckinPage() {
 
           return (
             <div key={branch.id} className="space-y-4">
-              <h2 className="text-lg font-semibold">{branch.name}</h2>
+              <div>
+                <h2 className="text-lg font-semibold">{branch.name}</h2>
+                <p className="text-sm text-muted-foreground">{formatHumanDate(today)}</p>
+                {todayCheckin ? (
+                  <p className="text-sm font-medium text-emerald-700">
+                    ✓ Ya cargaste las compensaciones de hoy
+                  </p>
+                ) : (
+                  <p className="text-sm font-medium text-amber-700">Te falta cargar el día de hoy</p>
+                )}
+              </div>
               <CheckinDayPanel
                 branchId={branch.id}
                 date={today}
                 isToday
                 compensationTypes={compensationTypes ?? []}
                 existing={todayCheckin}
+                currency={currency}
               />
               {pendingDays.length > 0 && (
                 <div className="space-y-3">
-                  <p className="text-sm font-medium text-muted-foreground">Días pendientes</p>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Te falta{pendingDays.length === 1 ? "" : "n"} {pendingDays.length} día
+                    {pendingDays.length === 1 ? "" : "s"} anterior{pendingDays.length === 1 ? "" : "es"}
+                  </p>
                   {pendingDays.map((day) => (
                     <CheckinDayPanel
                       key={day}
@@ -126,6 +144,7 @@ export default async function CheckinPage() {
                       isToday={false}
                       compensationTypes={compensationTypes ?? []}
                       existing={null}
+                      currency={currency}
                     />
                   ))}
                 </div>

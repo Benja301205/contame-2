@@ -32,7 +32,7 @@ export default async function SettingsPage() {
 
       <Card className="max-w-lg" data-testid="loss-params-card">
         <CardHeader>
-          <CardTitle>Pérdida estimada por reviews</CardTitle>
+          <CardTitle>Cómo estimamos la pérdida por reseñas</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <LossParamsForm
@@ -44,6 +44,7 @@ export default async function SettingsPage() {
             <MethodologyModal
               avgTicket={organization?.avg_ticket ?? null}
               affectedFactor={organization?.affected_factor ?? 1}
+              currency={organization?.currency ?? "ARS"}
             />
           </div>
         </CardContent>

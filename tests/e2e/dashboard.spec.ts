@@ -66,16 +66,39 @@ test("el dashboard renderiza con datos y el filtro de período cambia los valore
   await page.getByLabel("Email").fill(ADMIN_EMAIL);
   await page.getByLabel("Contraseña").fill(SEED_PASSWORD);
   await page.getByRole("button", { name: /ingresar/i }).click();
-  await page.waitForURL("http://127.0.0.1:3000/");
+  await page.waitForURL("http://127.0.0.1:3000/dashboard");
 
   await page.goto("/dashboard?period=180");
   const branchCard = page.getByTestId(`branch-card-${branch!.id}`);
-  await expect(branchCard.getByText("(2 reviews)")).toBeVisible();
+  await expect(branchCard.getByText("(2 reseñas)")).toBeVisible();
 
   await page.getByRole("link", { name: "30 días" }).click();
   await expect(page).toHaveURL(/period=30/);
-  await expect(branchCard.getByText("(1 reviews)")).toBeVisible();
+  await expect(branchCard.getByText("(1 reseñas)")).toBeVisible();
 
-  await expect(page.getByText("Heatmap sucursal")).toBeVisible();
+  await expect(page.getByText("Problemas por sucursal")).toBeVisible();
   await expect(page.getByText("Distribución de sentimiento")).toBeVisible();
+});
+
+test("el chart de distribución de sentimiento se renderiza con ancho real, no colapsado", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(ADMIN_EMAIL);
+  await page.getByLabel("Contraseña").fill(SEED_PASSWORD);
+  await page.getByRole("button", { name: /ingresar/i }).click();
+  await page.waitForURL("http://127.0.0.1:3000/dashboard");
+
+  await page.goto("/dashboard?period=180");
+
+  // Bug real encontrado en el Loop 8: el Card que envuelve este chart tenía
+  // `w-fit`, y ResponsiveContainer (Recharts) mide el ancho de su padre para
+  // `width="100%"` — con `w-fit` sobre un padre sin contenido propio todavía,
+  // el chart colapsaba a ~32px. Un test que solo verifica "el texto está
+  // visible" no detecta esto: hay que medir las dimensiones renderizadas.
+  const chartContainer = page.locator(".recharts-responsive-container").first();
+  await expect(chartContainer).toBeVisible();
+  const box = await chartContainer.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(200);
 });

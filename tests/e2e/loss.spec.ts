@@ -91,7 +91,7 @@ test("admin cambia avg_ticket, recalcula, y el dashboard refleja el cambio", asy
   await page.getByLabel("Email").fill(ADMIN_EMAIL);
   await page.getByLabel("Contraseña").fill(SEED_PASSWORD);
   await page.getByRole("button", { name: /ingresar/i }).click();
-  await page.waitForURL("http://127.0.0.1:3000/");
+  await page.waitForURL("http://127.0.0.1:3000/dashboard");
 
   await page.goto("/settings");
   const lossParamsCard = page.getByTestId("loss-params-card");
@@ -108,8 +108,9 @@ test("admin cambia avg_ticket, recalcula, y el dashboard refleja el cambio", asy
 
   await page.goto("/dashboard");
   const branchRow = page.getByTestId(`loss-row-${branch!.id}`);
-  await expect(branchRow.getByText("Pérdida real (check-ins)")).toBeVisible();
-  await expect(branchRow.getByText("$250")).toBeVisible();
-  // 1 review negativa × 2000 × 1 = 2000 (es-AR usa "." como separador de miles)
-  await expect(branchRow.getByText("$2.000")).toBeVisible();
+  await expect(branchRow.getByText(/Registradas por encargados/)).toBeVisible();
+  // formatMoney usa Intl.NumberFormat es-AR (espacio no separable + "." de miles):
+  // 250 registrados, 1 review negativa × 2000 × 1 = 2.000 estimados.
+  await expect(branchRow).toContainText("250");
+  await expect(branchRow).toContainText("2.000");
 });

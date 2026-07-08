@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { CURRENCIES } from "@/lib/currencies";
 
-export type OrgActionResult = { error?: string };
+export type OrgActionResult = { error?: string; success?: boolean };
 
 export async function updateCurrency(
   _prev: OrgActionResult,
@@ -35,7 +35,7 @@ export async function updateCurrency(
   if (error) return { error: error.message };
 
   revalidatePath("/settings");
-  return {};
+  return { success: true };
 }
 
 export async function updateLossParams(
@@ -74,5 +74,5 @@ export async function updateLossParams(
   if (error) return { error: error.message };
 
   revalidatePath("/settings");
-  return {};
+  return { success: true };
 }

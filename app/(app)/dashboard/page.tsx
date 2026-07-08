@@ -3,12 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { getPeriodWindows, parsePeriod, type Period } from "@/lib/dashboard/period";
 import { buildHeatmap, ratingTrend, topCategoriesForBranch, type CategoryStat } from "@/lib/dashboard/transform";
+import { branchVerdict } from "@/lib/dashboard/verdict";
 import { currentMonthPeriod } from "@/lib/loss/period";
 import { PROBLEM_CATEGORIES } from "@/lib/analysis/classify";
+import { categoryLabel, sentimentLabel } from "@/lib/labels";
+import { formatRating } from "@/lib/format";
 import { CategoryBarChart } from "@/components/charts/category-bar";
 import { Heatmap } from "@/components/charts/heatmap";
-import { LossSummary } from "@/components/loss/loss-summary";
+import { LossHero } from "@/components/loss/loss-hero";
+import { LossRankingBars } from "@/components/loss/loss-ranking-bars";
 import { MethodologyModal } from "@/components/loss/methodology-modal";
+import { Stars } from "@/components/stars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type RatingSummaryRow = { branch_id: string; avg_rating: number | null; review_count: number };
@@ -63,7 +68,7 @@ export default async function DashboardPage({
   }));
 
   const sentimentData = ((sentimentRaw.data as SentimentRow[] | null) ?? []).map((r) => ({
-    category: r.sentiment,
+    category: sentimentLabel(r.sentiment),
     count: r.review_count,
   }));
 
@@ -91,9 +96,10 @@ export default async function DashboardPage({
 
   const { data: organization } = await supabase
     .from("organizations")
-    .select("avg_ticket, affected_factor")
+    .select("currency, avg_ticket, affected_factor")
     .eq("id", profile!.orgId)
     .single();
+  const currency = organization?.currency ?? "ARS";
 
   const { data: lossSnapshots } = await supabase
     .from("loss_snapshots")
@@ -114,10 +120,13 @@ export default async function DashboardPage({
         b.loss!.compensationTotal + b.loss!.estimatedReviewLoss - (a.loss!.compensationTotal + a.loss!.estimatedReviewLoss),
     );
 
+  const totalReal = lossRanking.reduce((sum, r) => sum + r.loss!.compensationTotal, 0);
+  const totalEstimated = lossRanking.reduce((sum, r) => sum + r.loss!.estimatedReviewLoss, 0);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">Panel</h1>
         <div className="flex gap-1">
           {PERIODS.map((p) => (
             <Link
@@ -133,6 +142,42 @@ export default async function DashboardPage({
         </div>
       </div>
 
+      {/* (a) La plata primero: héroe de pérdidas del mes, siempre arriba de todo. */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="sr-only">Pérdidas del mes</CardTitle>
+          <div />
+          <MethodologyModal
+            avgTicket={organization?.avg_ticket ?? null}
+            affectedFactor={organization?.affected_factor ?? 1}
+            currency={currency}
+          />
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {lossRanking.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay datos de pérdidas para este mes. Recalculá desde Configuración.
+            </p>
+          ) : (
+            <>
+              <LossHero totalReal={totalReal} totalEstimated={totalEstimated} currency={currency} />
+              <div>
+                <p className="mb-3 text-sm font-medium">Sucursales, de mayor a menor pérdida</p>
+                <LossRankingBars
+                  items={lossRanking.map((r) => ({
+                    branchId: r.branch.id,
+                    branchName: r.branch.name,
+                    compensationTotal: r.loss!.compensationTotal,
+                    estimatedReviewLoss: r.loss!.estimatedReviewLoss,
+                  }))}
+                  currency={currency}
+                />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {branchList.length === 0 && (
         <p className="text-sm text-muted-foreground">
           Todavía no hay sucursales activas.{" "}
@@ -143,6 +188,7 @@ export default async function DashboardPage({
         </p>
       )}
 
+      {/* (b) Veredicto por sucursal + (c) charts, dentro de cada card. */}
       <div className="grid gap-4 md:grid-cols-2">
         {branchList.map((branch) => {
           const current = currentByBranch.get(branch.id);
@@ -159,30 +205,43 @@ export default async function DashboardPage({
                 <CardTitle>{branch.name}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-baseline gap-2 text-sm">
-                  <span className="text-2xl font-semibold">
-                    {current?.avg_rating != null ? Number(current.avg_rating).toFixed(1) : "—"}
-                  </span>
-                  <span className="text-muted-foreground">({current?.review_count ?? 0} reviews)</span>
-                  {trend.direction !== "flat" && (
-                    <span className={trend.direction === "up" ? "text-emerald-600" : "text-red-600"}>
-                      {trend.direction === "up" ? "▲" : "▼"} {Math.abs(trend.delta).toFixed(1)}
-                    </span>
+                <div className="flex items-center gap-2 text-sm">
+                  {current?.avg_rating != null ? (
+                    <>
+                      <Stars rating={Number(current.avg_rating)} />
+                      <span className="font-semibold">{formatRating(Number(current.avg_rating))}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Sin ratings en el período</span>
                   )}
+                  <span className="text-muted-foreground">({current?.review_count ?? 0} reseñas)</span>
+                  {current?.avg_rating != null &&
+                    (trend.direction === "flat" ? (
+                      <span className="text-muted-foreground">sin cambios</span>
+                    ) : (
+                      <span className={trend.direction === "up" ? "text-emerald-700" : "text-red-700"}>
+                        {trend.direction === "up" ? "▲" : "▼"} {Math.abs(trend.delta).toFixed(1)}
+                      </span>
+                    ))}
                 </div>
+
+                <p className="text-sm">{branchVerdict(top[0])}</p>
 
                 {top.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Top problemas</p>
-                    <CategoryBarChart data={top.map((t) => ({ category: t.category, count: t.currentCount }))} />
+                    <p className="text-xs font-medium text-muted-foreground">Problemas más frecuentes</p>
+                    <CategoryBarChart
+                      data={top.map((t) => ({ category: categoryLabel(t.category), count: t.currentCount }))}
+                    />
                     <ul className="space-y-1 text-xs">
                       {top.slice(0, 2).map((t) => {
                         const examples = examplesByPair.get(`${branch.id}:${t.category}`) ?? [];
                         return (
                           <li key={t.category}>
-                            <span className="font-medium">{t.category}</span>{" "}
-                            <span className={t.trend === "up" ? "text-red-600" : t.trend === "down" ? "text-emerald-600" : ""}>
-                              ({t.trend === "up" ? "▲" : t.trend === "down" ? "▼" : "—"} vs. período anterior)
+                            <span className="font-medium">{categoryLabel(t.category)}</span>{" "}
+                            <span className={t.trend === "up" ? "text-red-700" : t.trend === "down" ? "text-emerald-700" : "text-muted-foreground"}>
+                              ({t.trend === "up" ? "▲ empeoró" : t.trend === "down" ? "▼ mejoró" : "sin cambios"} vs.
+                              período anterior)
                             </span>
                             {examples.map((ex, i) => (
                               <p key={i} className="pl-2 text-muted-foreground">
@@ -210,38 +269,7 @@ export default async function DashboardPage({
         })}
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Pérdidas — mes en curso</CardTitle>
-          <MethodologyModal
-            avgTicket={organization?.avg_ticket ?? null}
-            affectedFactor={organization?.affected_factor ?? 1}
-          />
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {lossRanking.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Todavía no hay snapshots de pérdidas para este mes. Recalculá desde Configuración.
-            </p>
-          )}
-          {lossRanking.map(({ branch, loss }) => (
-            <div
-              key={branch.id}
-              data-testid={`loss-row-${branch.id}`}
-              className="border-b pb-3 last:border-0"
-            >
-              <p className="mb-1 text-sm font-medium">{branch.name}</p>
-              <LossSummary
-                compensationTotal={loss!.compensationTotal}
-                estimatedReviewLoss={loss!.estimatedReviewLoss}
-                avgTicketConfigured={organization?.avg_ticket != null}
-              />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card className="w-fit">
+      <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>Distribución de sentimiento</CardTitle>
         </CardHeader>
@@ -256,7 +284,7 @@ export default async function DashboardPage({
 
       <Card className="w-fit">
         <CardHeader>
-          <CardTitle>Heatmap sucursal × categoría</CardTitle>
+          <CardTitle>Problemas por sucursal</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Heatmap
@@ -270,7 +298,7 @@ export default async function DashboardPage({
       <Card className="max-w-md">
         <CardContent className="py-4">
           <Link href="/dashboard/compliance" className="text-sm underline underline-offset-2">
-            Cumplimiento de check-ins
+            Cumplimiento de registros diarios
           </Link>
         </CardContent>
       </Card>

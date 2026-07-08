@@ -1,6 +1,7 @@
 "use client";
 
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CHART_ACCENT } from "@/lib/theme";
 
 export type TrendPoint = { label: string; value: number };
 
@@ -28,7 +29,7 @@ export function TrendChart({
           type="monotone"
           dataKey="value"
           name={valueLabel}
-          stroke="#2563eb"
+          stroke={CHART_ACCENT}
           strokeWidth={2}
           dot={false}
         />

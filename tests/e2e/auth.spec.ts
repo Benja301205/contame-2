@@ -22,11 +22,11 @@ test("login fallido muestra error y no navega", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test("login exitoso lleva al home con nombre, rol y org", async ({ page }) => {
+test("login exitoso de un admin aterriza en el Panel (Loop 8: no en /)", async ({ page }) => {
   await login(page, ADMIN_EMAIL, SEED_PASSWORD);
-  await expect(page).toHaveURL("http://127.0.0.1:3000/");
-  await expect(page.getByText(`Organización: ${SEED_ORGS[0].name}`)).toBeVisible();
-  await expect(page.getByText("Rol: Admin")).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:3000/dashboard");
+  await expect(page.getByRole("heading", { name: "Panel" })).toBeVisible();
+  await expect(page.getByText(`Admin · ${SEED_ORGS[0].name}`)).toBeVisible();
 });
 
 test("manager aterriza en /checkin después de loguearse (Loop 4: home = check-in)", async ({ page }) => {

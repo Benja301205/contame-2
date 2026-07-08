@@ -406,7 +406,34 @@ loss_snapshots  (id uuid PK, org_id FK, branch_id FK, period date (mes),
 - E2E completo: guión de demo automatizado en Playwright (login admin → dashboard → sucursal → pérdidas → login manager → check-in).
 - Regresión: toda la suite anterior.
 
-**⛔ Fin del MVP. Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de este documento.**
+**⛔ Fin del MVP original. Todo lo que sigue es una extensión explícita aprobada por el dueño del producto — ver Loop 8.**
+
+---
+
+## Loop 8 — Rediseño UX/UI (extensión aprobada, post-MVP)
+
+**Motivo:** el MVP funcionaba pero estaba pensado para quien lo construyó, no para quien lo va a usar. Audiencia objetivo real: dueños y gerentes gastronómicos **no técnicos**. Principios rectores: cero jerga, cero datos crudos (slugs, ISO dates), la plata primero, y cada pantalla responde una pregunta del usuario sin que tenga que interpretar nada.
+
+**Regla de alcance:** UI/copy/estilos únicamente. No se tocaron migraciones, el motor de pérdidas (`lib/loss/engine.ts`), el clasificador (`lib/analysis/classify.ts`) ni la lógica de los endpoints — solo cómo se presentan sus resultados.
+
+**Qué se hizo:**
+1. **Bug real encontrado y arreglado:** la card "Distribución de sentimiento" del dashboard colapsaba a ~32px porque `<Card className="w-fit">` envolvía un `ResponsiveContainer width="100%"` de Recharts — un padre `w-fit` sin contenido propio colapsa a 0 antes de que el chart mida. Fix: `w-full max-w-md`. Test nuevo (`tests/e2e/dashboard.spec.ts`) que mide `getBoundingClientRect()` del chart renderizado, no solo presencia de texto — el tipo de test que sí atrapa este bug.
+2. **Tipografía:** `app/globals.css` tenía `--font-sans: var(--font-sans)` (autorreferencial, nunca resolvía a la fuente real inyectada por `next/font`) — por eso el sitio renderizaba con el serif default del navegador pese a tener Geist configurado en `layout.tsx`. Fix: `--font-sans: var(--font-geist-sans)`.
+3. **Tema de marca:** verde de Contame (`#166534`, contraste 7.13:1 con blanco) como `--primary` (botones, links, foco, estados activos del nav); verde-lima (`#65a30d`) como acento de gráficos (`lib/theme.ts`, `CHART_ACCENT`, reemplaza el azul default de Recharts). Fondo de página gris muy claro (`oklch(0.97 0.004 247)`) para que las cards blancas se despeguen visualmente.
+4. **`lib/labels.ts`:** diccionario central de categorías (`comida_fria` → "Comida fría", etc.), severidad (1/2/3 → "Menor"/"Importante"/"Grave" con semáforo de color) y sentimiento — usado en charts, heatmap, filtros, chips y ejemplos. Ningún slug con guión bajo llega a la UI. Test que recorre todo `PROBLEM_CATEGORIES` y falla si algún label queda sin traducir.
+5. **`lib/format.ts`:** `formatMoney` (Intl.NumberFormat es-AR, `"$ 12.400"` con símbolo, punto de miles y espacio no separable — sin decimales), `formatRating` (`"2,1 de 5"`, coma decimal), `formatHumanDate` (`"Hoy, miércoles 8 de julio"` si es hoy en hora argentina, `"8 jul 2026"` en cualquier otro caso — nunca una fecha ISO cruda) y `formatShortDayMonth` para encabezados de tabla.
+6. **Panel** (renombre de "Dashboard", el admin aterriza acá directo — `/` ahora es un simple redirect según rol, sin pantalla de cuenta intermedia): orden rediseñado — (a) héroe de pérdidas del mes arriba de todo (`"Este mes tu cadena perdió $X"`, única pantalla que suma real + estimada, siempre con desglose debajo — decisión explícita del dueño del producto que reemplaza la regla más estricta del Loop 6 solo en esta pantalla), sucursales ordenadas de mayor a menor pérdida con barra comparativa (`components/loss/loss-ranking-bars.tsx`); (b) veredicto en una frase por sucursal generado por reglas sin LLM (`lib/dashboard/verdict.ts`: categoría dominante + tendencia, ej. "Atención es el problema dominante y empeoró vs. el período anterior"); (c) charts. Ratings con estrellas dibujadas + `"2,1 de 5"`; cambio de rating en 0 muestra `"sin cambios"` en gris, nunca una flecha roja/verde en cero.
+7. **Reseñas** (renombre de "Reviews"): contador arriba (`"214 reseñas · 78 negativas"`), filtros esenciales (Sucursal, Sentimiento) siempre visibles y el resto (Rating, Problema, Gravedad, fechas) colapsado en un `<details>` "Más filtros" (se abre solo si alguno de esos filtros ya está activo). Chips y opciones de filtro traducidos.
+8. **Registro del día** (renombre de "Check-in"): estado binario arriba de cada sucursal (`"✓ Ya cargaste las compensaciones de hoy"` / `"Te falta cargar el día de hoy"`), fecha humana, días pendientes como `"Te faltan N días anteriores"` con la lista debajo (no solo el estado de hoy). Motivo de compensación traducido, montos con `formatMoney`.
+9. **Configuración:** ayuda inline en criollo para Ticket promedio (`"¿Cuánto gasta un cliente promedio en una visita?"`) y Factor de clientes afectados (`"1 = contamos solo al cliente que escribió la reseña — la estimación más conservadora"`); feedback visible al guardar (`"✓ Guardado"`, antes no había ninguna confirmación); texto de ayuda de `google_place_id` reescrito en lenguaje llano; fix de labels pegados a inputs/selects (`currency-form.tsx` no tenía `block` en el label — mismo bug de spacing que ya se había encontrado y arreglado en el Loop 7 para el wizard de check-in, esta vez en Configuración y en los filtros de Reseñas).
+10. **Heatmap → "Problemas por sucursal"**, columnas con categorías traducidas.
+11. Detalle de sucursal: labels de pérdidas alineados con el Panel, gravedad traducida, fechas ISO crudas reemplazadas por `formatShortDayMonth`, moneda de la org pasada a todos los componentes de plata.
+
+**Bug de contraste encontrado y corregido en el camino (no pedido explícitamente, pero necesario para mantener el criterio de Lighthouse):** el nuevo fondo de página gris claro bajó el contraste de `--muted-foreground` (heredado del Loop 7, ya quedaba anotado como deuda técnica en 96/100) por debajo de 4.5:1 en texto que no está dentro de una card blanca — se oscureció a `#666666`. Las flechas de tendencia (`text-emerald-600`/`text-red-600`, contraste 3.65:1 con blanco) se oscurecieron a `-700`. Resultado: Lighthouse accesibilidad pasó de 96/100 (Panel) y 95/100 (Registro del día) a **100/100 en ambas pantallas**, contra el build de producción.
+
+**Suite:** 124 unit/integration (Vitest) + 13 e2e (Playwright) en verde — se sumaron tests nuevos (`format.test.ts`, `labels.test.ts`, `dashboard-verdict.test.ts`, la medición de dimensiones del chart) y se ajustaron los textos esperados en los tests existentes al nuevo copy (nav, dashboard, loss, checkin-wizard), sin tocar la lógica que verifican. `npm run build` sin errores ni warnings nuevos.
+
+**⛔ Cualquier feature nueva a partir de acá requiere un PRD nuevo o una extensión explícita de este documento.**
 
 ---
 

@@ -20,9 +20,12 @@ export function LossParamsForm({
   );
 
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-3">
-      <div className="space-y-2">
+    <form action={formAction} className="space-y-4">
+      <div className="space-y-1">
         <Label htmlFor="avgTicket">Ticket promedio</Label>
+        <p className="text-xs text-muted-foreground">
+          ¿Cuánto gasta un cliente promedio en una visita?
+        </p>
         <Input
           id="avgTicket"
           name="avgTicket"
@@ -34,8 +37,11 @@ export function LossParamsForm({
           className="w-36"
         />
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1">
         <Label htmlFor="affectedFactor">Factor de clientes afectados</Label>
+        <p className="text-xs text-muted-foreground">
+          1 = contamos solo al cliente que escribió la reseña — la estimación más conservadora.
+        </p>
         <Input
           id="affectedFactor"
           name="affectedFactor"
@@ -46,10 +52,13 @@ export function LossParamsForm({
           className="w-36"
         />
       </div>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Guardando..." : "Guardar"}
-      </Button>
-      {state.error && <p className="w-full text-sm text-destructive">{state.error}</p>}
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Guardando..." : "Guardar"}
+        </Button>
+        {state.success && <p className="text-sm text-emerald-700">✓ Guardado</p>}
+        {state.error && <p className="text-sm text-destructive">{state.error}</p>}
+      </div>
     </form>
   );
 }

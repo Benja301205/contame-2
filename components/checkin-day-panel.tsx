@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { markCheckinSkipped, submitCheckin, type CheckinItemInput } from "@/lib/actions/checkins";
 import { calculateCheckinTotal } from "@/lib/checkins/totals";
 import { PROBLEM_CATEGORIES } from "@/lib/analysis/classify";
+import { categoryLabel } from "@/lib/labels";
+import { formatHumanDate, formatMoney } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,12 +34,14 @@ export function CheckinDayPanel({
   isToday,
   compensationTypes,
   existing,
+  currency = "ARS",
 }: {
   branchId: string;
   date: string;
   isToday: boolean;
   compensationTypes: CompensationType[];
   existing: ExistingCheckin | null;
+  currency?: string;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"summary" | "unanswered" | "wizard">(
@@ -109,12 +113,13 @@ export function CheckinDayPanel({
   );
 
   const testId = isToday ? "checkin-panel-today" : `checkin-panel-${date}`;
+  const humanDate = formatHumanDate(date);
 
   if (mode === "summary" && existing) {
     return (
       <Card className="max-w-lg" data-testid={testId}>
         <CardHeader>
-          <CardTitle>{date}</CardTitle>
+          <CardTitle>{humanDate}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {existing.status === "skipped" ? (
@@ -125,10 +130,11 @@ export function CheckinDayPanel({
             <>
               {existing.items.map((item, i) => (
                 <p key={i} className="text-sm">
-                  {item.typeName}: {item.quantity} × ${item.unitCost} = ${item.total}
+                  {item.typeName}: {item.quantity} × {formatMoney(item.unitCost, currency)} ={" "}
+                  {formatMoney(item.total, currency)}
                 </p>
               ))}
-              <p className="text-sm font-medium">Total: ${existing.total}</p>
+              <p className="text-sm font-medium">Total: {formatMoney(existing.total, currency)}</p>
             </>
           )}
           {isToday && (
@@ -145,7 +151,9 @@ export function CheckinDayPanel({
     return (
       <Card className="max-w-lg" data-testid={testId}>
         <CardHeader>
-          <CardTitle>{isToday ? "¿Hoy diste compensaciones?" : `${date}: ¿hubo compensaciones?`}</CardTitle>
+          <CardTitle>
+            {isToday ? "¿Hoy diste compensaciones?" : `${humanDate}: ¿hubo compensaciones?`}
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button onClick={handleNoCompensations} disabled={loading}>
@@ -168,7 +176,7 @@ export function CheckinDayPanel({
   return (
     <Card className="max-w-lg" data-testid={testId}>
       <CardHeader>
-        <CardTitle>{date}: cargar compensaciones</CardTitle>
+        <CardTitle>{humanDate}: cargar compensaciones</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {rows.map((row) => (
@@ -212,7 +220,7 @@ export function CheckinDayPanel({
                   >
                     {PROBLEM_CATEGORIES.map((c) => (
                       <option key={c} value={c}>
-                        {c}
+                        {categoryLabel(c)}
                       </option>
                     ))}
                   </select>
@@ -236,7 +244,7 @@ export function CheckinDayPanel({
           </div>
         ))}
 
-        <p className="text-sm font-medium">Total: ${previewTotal}</p>
+        <p className="text-sm font-medium">Total: {formatMoney(previewTotal, currency)}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex gap-2">
           <Button onClick={handleSubmitWizard} disabled={loading}>
