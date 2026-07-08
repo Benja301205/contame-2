@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
-import { CURRENCIES, updateCurrency, type OrgActionResult } from "@/lib/actions/organization";
+import { updateCurrency, type OrgActionResult } from "@/lib/actions/organization";
+import { CURRENCIES } from "@/lib/currencies";
 
 export function CurrencyForm({ currentCurrency }: { currentCurrency: string }) {
   const [state, formAction, pending] = useActionState<OrgActionResult, FormData>(

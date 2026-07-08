@@ -3,9 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { getPeriodWindows, parsePeriod, type Period } from "@/lib/dashboard/period";
 import { buildHeatmap, ratingTrend, topCategoriesForBranch, type CategoryStat } from "@/lib/dashboard/transform";
+import { currentMonthPeriod } from "@/lib/loss/period";
 import { PROBLEM_CATEGORIES } from "@/lib/analysis/classify";
 import { CategoryBarChart } from "@/components/charts/category-bar";
 import { Heatmap } from "@/components/charts/heatmap";
+import { LossSummary } from "@/components/loss/loss-summary";
+import { MethodologyModal } from "@/components/loss/methodology-modal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type RatingSummaryRow = { branch_id: string; avg_rating: number | null; review_count: number };
@@ -85,6 +88,31 @@ export default async function DashboardPage({
   const examplesByPair = new Map(examplesEntries.map((e) => [e.key, e.examples]));
 
   const heatmapMatrix = buildHeatmap(categoryStats, branchIds, [...PROBLEM_CATEGORIES]);
+
+  const { data: organization } = await supabase
+    .from("organizations")
+    .select("avg_ticket, affected_factor")
+    .eq("id", profile!.orgId)
+    .single();
+
+  const { data: lossSnapshots } = await supabase
+    .from("loss_snapshots")
+    .select("branch_id, compensation_total, estimated_review_loss")
+    .eq("period", currentMonthPeriod());
+
+  const lossByBranch = new Map(
+    (lossSnapshots ?? []).map((s) => [
+      s.branch_id,
+      { compensationTotal: Number(s.compensation_total), estimatedReviewLoss: Number(s.estimated_review_loss) },
+    ]),
+  );
+  const lossRanking = branchList
+    .map((b) => ({ branch: b, loss: lossByBranch.get(b.id) }))
+    .filter((r) => r.loss)
+    .sort(
+      (a, b) =>
+        b.loss!.compensationTotal + b.loss!.estimatedReviewLoss - (a.loss!.compensationTotal + a.loss!.estimatedReviewLoss),
+    );
 
   return (
     <div className="space-y-6">
@@ -171,6 +199,37 @@ export default async function DashboardPage({
           );
         })}
       </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Pérdidas — mes en curso</CardTitle>
+          <MethodologyModal
+            avgTicket={organization?.avg_ticket ?? null}
+            affectedFactor={organization?.affected_factor ?? 1}
+          />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {lossRanking.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Todavía no hay snapshots de pérdidas para este mes. Recalculá desde Configuración.
+            </p>
+          )}
+          {lossRanking.map(({ branch, loss }) => (
+            <div
+              key={branch.id}
+              data-testid={`loss-row-${branch.id}`}
+              className="border-b pb-3 last:border-0"
+            >
+              <p className="mb-1 text-sm font-medium">{branch.name}</p>
+              <LossSummary
+                compensationTotal={loss!.compensationTotal}
+                estimatedReviewLoss={loss!.estimatedReviewLoss}
+                avgTicketConfigured={organization?.avg_ticket != null}
+              />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card className="w-fit">
         <CardHeader>

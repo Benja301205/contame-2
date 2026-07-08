@@ -7,6 +7,10 @@
     {
       "path": "/api/analyze",
       "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/recompute-loss",
+      "schedule": "0 5 1 * *"
     }
   ]
 }

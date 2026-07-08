@@ -1,6 +1,6 @@
 # PROGRESS — Contame 2
 
-**Loop actual: 6 (Motor de pérdidas $) — pendiente de arrancar**
+**Loop actual: 7 (Pulido y demo) — pendiente de arrancar**
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
@@ -10,7 +10,7 @@
 | 3 — Análisis con Claude API | ✅ completo | 2026-07-08 | Modelo: `claude-haiku-4-5`. Eval real: 15/15 sentimiento, 15/15 categoría |
 | 4 — Check-in de compensaciones | ✅ completo | 2026-07-08 | Home del manager = `/checkin`; "hoy" en huso horario argentino |
 | 5 — Dashboard de patrones | ✅ completo | 2026-07-08 | Carga real medida: ~1.2-1.4s con 5.000 reviews (umbral: <2s) |
-| 6 — Motor de pérdidas $ | ⏳ pendiente | — | — |
+| 6 — Motor de pérdidas $ | ✅ completo | 2026-07-08 | Test-primero: fórmula validada a mano antes de escribir el motor |
 | 7 — Pulido y demo | ⏳ pendiente | — | — |
 
 ## Loop 0 — resumen
@@ -143,6 +143,30 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 
 **Bug de un loop anterior encontrado en el camino:** el test nuevo de `org_sentiment_distribution` (única de las 5 funciones SQL que es org-wide, sin acotar por sucursal — es su diseño, alimenta el chart de sentimiento a nivel organización del dashboard) al principio asumía que su ventana de fechas fijas (junio 2026) no tendría otras filas — pero varios tests de loops anteriores reusan esas mismas fechas fijas como fixtures. Se corrigió capturando una base ANTES de insertar los fixtures del test y comparando por delta, no por igualdad exacta.
 
+## Loop 6 — resumen
+
+**Decisiones de diseño (tomadas antes de implementar):**
+1. Los meses de `loss_snapshots` se definen en hora argentina, reusando `todayInBuenosAires()`/el mismo criterio de `checkin_today()` del Loop 4 (`lib/loss/period.ts`: `currentMonthPeriod()` = primer día del mes de "hoy" en ART). El mes en curso se snapshotea igual que los meses cerrados y se recalcula cada vez.
+2. `avg_ticket` default `NULL` (nunca un valor inventado): si es `NULL`, `estimated_review_loss` es `0` y la UI muestra "Configurá el ticket promedio para ver la estimación." `affected_factor` default `1` (solo el autor de la review), como pide el PRD.
+3. Toda la aritmética de plata vive en SQL (`numeric`), no en JS: `compute_branch_loss` hace la multiplicación `negative_review_count × avg_ticket × affected_factor` en Postgres. `lib/loss/engine.ts` solo orquesta llamadas RPC + upsert, nunca sumas/multiplicaciones de montos en TypeScript.
+4. Idempotencia por `unique(org_id, branch_id, period)` + upsert. `method` (jsonb) guarda la fórmula, `avg_ticket`/`affected_factor` usados, cantidad de reviews negativas, y el breakdown (ver punto siguiente) — un snapshot viejo sigue siendo explicable aunque cambien los parámetros después.
+5. Recompute: manual (botón "Recalcular pérdidas" en Settings) + automático al guardar `avg_ticket`/`affected_factor` desde el mismo botón (no hay un trigger separado "al cambiar parámetros": el admin cambia y aprieta recalcular) + cron mensual. El endpoint `/api/recompute-loss` sigue la política `CRON_SECRET` de los Loops 2/3 — pero el botón de Settings **no pasa por ese endpoint**: es una Server Action (`lib/actions/loss.ts`) que corre server-side con sesión de admin y llama a `lib/loss/engine.ts` directo. Así "el endpoint sigue la política CRON_SECRET" (cron + scripts) y el admin igual tiene un botón funcional sin exponer el secret al browser.
+
+**Breakdown por tipo de compensación y por categoría de motivo — elección: dentro del `method` jsonb del snapshot, congelado por período** (siguiendo la recomendación del usuario). Motivo: si se guardara como función SQL consultada en vivo, el desglose de un mes cerrado cambiaría retroactivamente si más adelante se renombra o desactiva un `compensation_type` — rompiendo la trazabilidad histórica que ya es la filosofía del campo `method` (que también congela `avg_ticket`/`affected_factor` usados en ese momento). Dos funciones SQL nuevas (`branch_compensation_breakdown`, `branch_reason_breakdown`) calculan el desglose en el momento del recompute; el resultado se guarda tal cual en `method.by_compensation_type`/`method.by_reason_category` y la UI de detalle de sucursal lo lee directo del snapshot, sin volver a consultar.
+
+**Qué se hizo:**
+- **Test primero** (`tests/integration/loss-engine.test.ts`), escrito y corrido en rojo antes de tocar la migración, tal como pidió el usuario: especifica con números calculados a mano los 4 casos del criterio 1 (mes completo, mes sin check-ins, mes sin reviews negativas, `avg_ticket` NULL) + el breakdown. Quedó en verde con la primera implementación de `compute_branch_loss`.
+- `supabase/migrations/0007_loss.sql`: `organizations.avg_ticket`/`affected_factor`, tabla `loss_snapshots` (RLS: solo lectura para la app, solo el motor con service role escribe — mismo patrón que `sync_jobs`/`reviews`), `compute_branch_loss`, `branch_compensation_breakdown`, `branch_reason_breakdown` — ninguna con `security definer` (a diferencia de las funciones cross-tabla de loops anteriores): no cruzan RLS, son agregaciones sobre tablas donde quien llama ya tiene acceso.
+- `lib/loss/period.ts` (`currentMonthPeriod`, `toPeriod`, `nextPeriod`, `monthsFromTo`) + `lib/loss/engine.ts`: `recomputeBranchLoss` calcula el primer mes con datos de la sucursal (mínimo entre su primer checkin y su primer review) y regenera snapshots para **todos** los meses desde ahí hasta el mes en curso (no solo el actual, como pidió el usuario) — upsert idempotente, así correr el recompute dos veces no duplica ni relee datos de más.
+- `app/api/recompute-loss/route.ts` (CRON_SECRET) + `lib/actions/loss.ts` (`recomputeLossAction`, Server Action con sesión admin) + `vercel.json` con cron mensual (día 1, 5am).
+- UI: `components/loss/{loss-summary,loss-breakdown,methodology-modal,recompute-loss-button}.tsx`, `components/loss-params-form.tsx`. Pérdida real y estimada **siempre en columnas separadas** (criterio 2) — ni la UI ni la DB las suman en ningún punto. Sección "Pérdidas" en el dashboard (ranking leído directo de `loss_snapshots` del mes en curso, no recalculado al vuelo, para que coincida por diseño con los snapshots — criterio 4) y en detalle de sucursal (evolución mensual real/estimada, breakdown del último snapshot, modal de metodología).
+- Tests: 12 unit/integration nuevos (5 del test-primero de la fórmula, 5 de idempotencia/RLS del recompute, 2 de `lib/loss/period.ts`) + 1 e2e (admin cambia `avg_ticket` → recalcula → el dashboard muestra el nuevo valor estimado).
+- Suite completa: 110 unit/integration + 11 e2e = 121 tests en verde. `npm run build` sin errores ni warnings.
+
+**Dos bugs reales de loops anteriores encontrados y corregidos en el camino** (regla del proyecto):
+- **`CURRENCIES` exportado desde un archivo `"use server"`** (`lib/actions/organization.ts`, desde el Loop 1): Next.js exige que un módulo marcado `"use server"` solo exporte funciones async (Server Actions) — exportar una constante array la envuelve en una referencia de servidor rota, y `CurrencyForm` crasheaba en el cliente con `CURRENCIES.map is not a function` apenas se renderizaba `/settings` en un navegador real. Ningún test había visitado esa página hasta el e2e de este loop. Se movió `CURRENCIES` a `lib/currencies.ts`.
+- **`min`/`step` inconsistentes en un `<input type="number">` bloqueaban el submit del formulario en silencio** (`components/loss-params-form.tsx`, bug propio de este loop, no de uno anterior): `min="0.01" step="0.1"` con `defaultValue={1}` viola la validación nativa HTML5 (`1` no es `0.01 + n×0.1` para ningún entero `n`) — el navegador cancela el submit sin disparar el evento `submit`, sin request de red y sin ningún error en consola, indistinguible de un bug del Server Action. Se tardó bastante en diagnosticar porque el síntoma (nada pasa al click) sugería primero un problema con el componente `Input` de Base UI — esa hipótesis resultó falsa (confirmado comparando con `CurrencyForm`, que sí funciona con los mismos componentes) y se revirtió un cambio innecesario en `components/compensation-type-row.tsx` que se había hecho por analogía incorrecta. Fix real: `min="0"` para que `defaultValue={1}` sea un paso válido.
+
 ## Decisiones tomadas
 - **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
 - RLS: se usaron funciones `security definer` (`get_user_org_id`, `get_user_role`) en vez de subqueries directas contra `profiles` en su propia policy, para evitar la recursión infinita clásica de Supabase.
@@ -163,6 +187,7 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - Ninguna deuda pendiente sobre el criterio 2 — verificado con datos reales el 2026-07-08 (ver resumen del Loop 2).
 - `classifyBatch` (`lib/analysis/classify.ts`) no chequea `response.stop_reason === "max_tokens"`: si la respuesta se trunca por límite de tokens, el JSON queda incompleto y el error que se propaga (JSON.parse fallido o zod fallido) no deja claro que la causa fue truncamiento. No bloqueante — con lotes de 20 reviews y `max_tokens: 4096` hay margen de sobra — pero si en el futuro se sube el tamaño de lote o el `summary` se vuelve más largo, conviene detectar `stop_reason` explícitamente y dar un mensaje de error específico.
 - `app/(app)/dashboard/page.tsx` hace una query separada por cada par (sucursal, categoría del Top 5) para traer las 2 reviews de ejemplo — con 10 sucursales × 5 categorías serían hasta 50 queries en paralelo (`Promise.all`). Medido con 5 sucursales reales no fue un problema (carga total ~1.2-1.4s, bien debajo del umbral de 2s), pero si el número de sucursales activas crece mucho en producción, conviene reemplazarlo por una sola query con `DISTINCT ON`/lateral join en vez de N llamadas.
+- Warning de consola (no funcional, no bloqueante): "Base UI: A component is changing the default value state of an uncontrolled FieldControl after being initialized" en `LossParamsForm` — aparece porque `revalidatePath("/settings")` re-renderiza el formulario con un `defaultValue` distinto después de guardar. Cosmético; para eliminarlo habría que convertir esos inputs a controlados, no se justificó el esfuerzo en este loop.
 
 ## Bloqueos
 - (ninguno pendiente — el bloqueo de Docker/Homebrew se resolvió con instalación manual del usuario)
