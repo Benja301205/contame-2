@@ -29,6 +29,7 @@ export type ReviewCardData = {
   text: string | null;
   reviewDate: string | null;
   branchName?: string;
+  analysisStatus?: "pending" | "done" | "failed";
   analysis: {
     sentiment: Sentiment;
     categories: ProblemCategory[];
@@ -72,6 +73,14 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
               </span>
             )}
           </div>
+        )}
+        {!review.analysis && review.analysisStatus === "pending" && (
+          <p className="pt-1 text-xs text-muted-foreground">Análisis pendiente.</p>
+        )}
+        {!review.analysis && review.analysisStatus === "failed" && (
+          <p className="pt-1 text-xs text-destructive">
+            El análisis falló para esta reseña — se reintentará en la próxima corrida.
+          </p>
         )}
       </CardContent>
     </Card>

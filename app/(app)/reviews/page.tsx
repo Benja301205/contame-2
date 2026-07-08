@@ -30,7 +30,7 @@ export default async function ReviewsPage({
 
   let query = supabase
     .from("reviews")
-    .select(`id, author_name, rating, text, review_date, branches(name), ${analysisRelation}`)
+    .select(`id, author_name, rating, text, review_date, analysis_status, branches(name), ${analysisRelation}`)
     .order("review_date", { ascending: false });
 
   if (branchId) query = query.eq("branch_id", branchId);
@@ -57,6 +57,7 @@ export default async function ReviewsPage({
       text: review.text,
       reviewDate: review.review_date,
       branchName: branchList[0]?.name,
+      analysisStatus: review.analysis_status as "pending" | "done" | "failed",
       analysis: analysis
         ? {
             sentiment: analysis.sentiment,

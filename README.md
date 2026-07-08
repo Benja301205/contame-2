@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Contame
 
-## Getting Started
+Dashboard para cadenas de restaurantes: reviews de Google, patrones de reclamos por sucursal y pérdida financiera estimada (compensaciones reales + churn estimado por reviews negativas).
 
-First, run the development server:
+Next.js 16 (App Router) + Supabase (Postgres/Auth/RLS) + Tailwind/shadcn.
+
+## Setup local
 
 ```bash
+npm install
+supabase start          # levanta Postgres local + Auth
+npm run seed             # datos base de desarrollo (org/branches/usuarios de test)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Para una demo completa con datos realistas (sin tocar Apify ni Claude):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run seed:demo
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variables de entorno
 
-## Learn More
+Crear `.env.local` (nunca commitear) con:
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Uso |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase (local o cloud). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key de Supabase, usada en clientes browser/SSR con sesión de usuario. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key, solo server-side (`lib/supabase/admin.ts`, seeds, endpoints CRON_SECRET). Nunca exponer al cliente. |
+| `NEXT_PUBLIC_SITE_URL` | Base URL de la app, usada para el `redirectTo` del flujo de invitación por email. |
+| `CRON_SECRET` | Secreto compartido para autorizar `/api/sync-reviews`, `/api/analyze`, `/api/recompute-loss` (cron de Vercel y `scripts/sync.ts`). Sin este valor seteado, esos endpoints rechazan todo. |
+| `APIFY_TOKEN` | Token de Apify para el `ApifyProvider` de reviews. Solo necesario si `REVIEW_PROVIDER=apify`. |
+| `ANTHROPIC_API_KEY` | API key de Claude para `/api/analyze` (clasificación de reviews). |
+| `REVIEW_PROVIDER` | `apify` usa el actor real de Apify; cualquier otro valor (o ausente) usa el `MockProvider` (útil en desarrollo/CI sin gastar créditos). |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Rate limiting
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Los endpoints `/api/sync-reviews`, `/api/analyze`, `/api/recompute-loss` (CRON_SECRET) y `/api/invite` (sesión de admin) tienen un rate limit simple en memoria (`lib/rate-limit.ts`).
 
-## Deploy on Vercel
+**Importante:** en Vercel (serverless) el estado vive por instancia de función, no es un contador global — es un límite *best-effort*, no una garantía dura. Alcanza para el MVP (frenar retries en loop o abuso accidental de invitaciones). Si en algún momento se necesita un límite real y compartido entre instancias, migrar a Upstash/Redis — no vale la pena antes de que importe de verdad.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Cron jobs (`vercel.json`)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `06:00` diario — `/api/sync-reviews` (Apify, todas las orgs).
+- `06:15` diario — `/api/analyze` (Claude, reviews pendientes).
+- `1° de cada mes, 05:00` — `/api/recompute-loss` (recalcula snapshots de pérdida de todas las orgs).
+
+## Documentación del proyecto
+
+- `PRD_Contame_MVP.md` — alcance y loops del MVP.
+- `PROGRESS.md` — estado de avance loop por loop.
+- `DEMO.md` — guión de demo de 10 minutos.
+- `CLAUDE.md` — reglas de desarrollo por loops (Ralph Loop).

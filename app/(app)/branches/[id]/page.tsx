@@ -79,6 +79,13 @@ export default async function BranchDetailPage({
 
   const criticalReviews = criticalRes.data ?? [];
 
+  const { data: syncJobs } = await supabase
+    .from("sync_jobs")
+    .select("id, status, started_at, error, stats")
+    .eq("branch_id", branch.id)
+    .order("started_at", { ascending: false })
+    .limit(3);
+
   const { data: lossSnapshotsRaw } = await supabase
     .from("loss_snapshots")
     .select("period, compensation_total, estimated_review_loss, method")
@@ -195,6 +202,35 @@ export default async function BranchDetailPage({
                 {r.author_name ?? "Anónimo"} · {r.review_date}
               </p>
               <p>{r.text}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Últimas sincronizaciones</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {(!syncJobs || syncJobs.length === 0) && (
+            <p className="text-sm text-muted-foreground">
+              Todavía no se sincronizó esta sucursal.
+            </p>
+          )}
+          {(syncJobs ?? []).map((job) => (
+            <div key={job.id} className="text-sm">
+              <p className="text-xs text-muted-foreground">
+                {new Date(job.started_at).toLocaleString("es-AR")}
+              </p>
+              {job.status === "failed" ? (
+                <p className="text-destructive">Sync fallida: {job.error}</p>
+              ) : job.status === "running" ? (
+                <p className="text-muted-foreground">En curso...</p>
+              ) : (
+                <p>
+                  Sync ok — {job.stats?.new ?? 0} reviews nuevas ({job.stats?.fetched ?? 0} traídas)
+                </p>
+              )}
             </div>
           ))}
         </CardContent>

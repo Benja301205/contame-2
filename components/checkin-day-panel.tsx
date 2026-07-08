@@ -184,7 +184,7 @@ export function CheckinDayPanel({
             {row.enabled && (
               <div className="flex flex-wrap items-end gap-2 pl-6">
                 <div className="space-y-1">
-                  <label htmlFor={`quantity-${row.typeId}`} className="text-xs text-muted-foreground">
+                  <label htmlFor={`quantity-${row.typeId}`} className="block text-xs text-muted-foreground">
                     Cantidad
                   </label>
                   <Input
@@ -201,7 +201,7 @@ export function CheckinDayPanel({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor={`reason-${row.typeId}`} className="text-xs text-muted-foreground">
+                  <label htmlFor={`reason-${row.typeId}`} className="block text-xs text-muted-foreground">
                     Motivo
                   </label>
                   <select
@@ -218,7 +218,7 @@ export function CheckinDayPanel({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label htmlFor={`unitcost-${row.typeId}`} className="text-xs text-muted-foreground">
+                  <label htmlFor={`unitcost-${row.typeId}`} className="block text-xs text-muted-foreground">
                     Monto
                   </label>
                   <Input

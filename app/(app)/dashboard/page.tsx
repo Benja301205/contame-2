@@ -133,6 +133,16 @@ export default async function DashboardPage({
         </div>
       </div>
 
+      {branchList.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Todavía no hay sucursales activas.{" "}
+          <Link href="/branches" className="underline underline-offset-2">
+            Creá la primera
+          </Link>{" "}
+          para empezar a ver patrones.
+        </p>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         {branchList.map((branch) => {
           const current = currentByBranch.get(branch.id);

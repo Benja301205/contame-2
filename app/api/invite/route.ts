@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCurrentProfile } from "@/lib/auth/current-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -18,6 +19,12 @@ export async function POST(request: Request) {
   }
   if (profile.role !== "admin") {
     return NextResponse.json({ error: "Solo un admin puede invitar." }, { status: 403 });
+  }
+  if (!checkRateLimit(`invite:${profile.orgId}`, 20, 60_000).allowed) {
+    return NextResponse.json(
+      { error: "Demasiadas invitaciones, reintentá más tarde." },
+      { status: 429 },
+    );
   }
 
   const parsed = inviteSchema.safeParse(await request.json());

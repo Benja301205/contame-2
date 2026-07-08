@@ -10,7 +10,8 @@
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "sync": "tsx --env-file=.env.local scripts/sync.ts",
     "eval:classifier": "tsx --env-file=.env.local scripts/eval-classifier.ts",
-    "seed:volume": "tsx --env-file=.env.local scripts/seed-volume.ts"
+    "seed:volume": "tsx --env-file=.env.local scripts/seed-volume.ts",
+    "seed:demo": "tsx --env-file=.env.local scripts/seed-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

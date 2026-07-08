@@ -142,7 +142,12 @@ export async function recomputeBranchLoss(
   return results;
 }
 
-/** Recalcula todas las sucursales activas de una organización. */
+/**
+ * Recalcula TODAS las sucursales de la organización, activas e inactivas
+ * (a propósito: una sucursal desactivada puede tener historia de checkins/
+ * reviews cuyos snapshots de pérdida siguen siendo válidos y no deben
+ * perderse ni congelarse desactualizados).
+ */
 export async function recomputeOrgLoss(
   admin: SupabaseClient,
   orgId: string,

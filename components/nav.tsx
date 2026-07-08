@@ -17,8 +17,8 @@ export function Nav({ profile }: { profile: CurrentProfile }) {
   }
 
   return (
-    <nav className="flex items-center justify-between border-b px-6 py-4">
-      <div className="flex items-center gap-6">
+    <nav className="flex flex-wrap items-center justify-between gap-y-2 border-b px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex flex-wrap items-center gap-4 sm:gap-6">
         <span className="font-semibold">Contame</span>
         <Link
           href={profile.role === "manager" ? "/checkin" : "/"}
@@ -50,7 +50,7 @@ export function Nav({ profile }: { profile: CurrentProfile }) {
         )}
       </div>
       <div className="flex items-center gap-4">
-        <div className="text-right text-sm">
+        <div className="hidden text-right text-sm sm:block">
           <p className="font-medium">{profile.fullName ?? profile.email}</p>
           <p className="text-muted-foreground">
             {profile.role === "admin" ? "Admin" : "Gerente"} · {profile.orgName}

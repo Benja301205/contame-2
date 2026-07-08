@@ -1,6 +1,6 @@
 # PROGRESS — Contame 2
 
-**Loop actual: 7 (Pulido y demo) — pendiente de arrancar**
+**MVP completo — los 8 loops (0-7) del PRD están cerrados.** Cualquier feature nueva requiere un PRD nuevo o una extensión explícita de `PRD_Contame_MVP.md`.
 
 | Loop | Estado | Fecha | Notas |
 |---|---|---|---|
@@ -11,7 +11,7 @@
 | 4 — Check-in de compensaciones | ✅ completo | 2026-07-08 | Home del manager = `/checkin`; "hoy" en huso horario argentino |
 | 5 — Dashboard de patrones | ✅ completo | 2026-07-08 | Carga real medida: ~1.2-1.4s con 5.000 reviews (umbral: <2s) |
 | 6 — Motor de pérdidas $ | ✅ completo | 2026-07-08 | Test-primero: fórmula validada a mano antes de escribir el motor |
-| 7 — Pulido y demo | ⏳ pendiente | — | — |
+| 7 — Pulido, seed de demo y hardening | ✅ completo | 2026-07-08 | Lighthouse a11y: Dashboard 96, Check-in 100 (build de producción) |
 
 ## Loop 0 — resumen
 
@@ -167,6 +167,30 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - **`CURRENCIES` exportado desde un archivo `"use server"`** (`lib/actions/organization.ts`, desde el Loop 1): Next.js exige que un módulo marcado `"use server"` solo exporte funciones async (Server Actions) — exportar una constante array la envuelve en una referencia de servidor rota, y `CurrencyForm` crasheaba en el cliente con `CURRENCIES.map is not a function` apenas se renderizaba `/settings` en un navegador real. Ningún test había visitado esa página hasta el e2e de este loop. Se movió `CURRENCIES` a `lib/currencies.ts`.
 - **`min`/`step` inconsistentes en un `<input type="number">` bloqueaban el submit del formulario en silencio** (`components/loss-params-form.tsx`, bug propio de este loop, no de uno anterior): `min="0.01" step="0.1"` con `defaultValue={1}` viola la validación nativa HTML5 (`1` no es `0.01 + n×0.1` para ningún entero `n`) — el navegador cancela el submit sin disparar el evento `submit`, sin request de red y sin ningún error en consola, indistinguible de un bug del Server Action. Se tardó bastante en diagnosticar porque el síntoma (nada pasa al click) sugería primero un problema con el componente `Input` de Base UI — esa hipótesis resultó falsa (confirmado comparando con `CurrencyForm`, que sí funciona con los mismos componentes) y se revirtió un cambio innecesario en `components/compensation-type-row.tsx` que se había hecho por analogía incorrecta. Fix real: `min="0"` para que `defaultValue={1}` sea un paso válido.
 
+## Loop 7 — resumen
+
+**Nits de la auditoría del Loop 6, sumados al alcance del hardening:**
+- `supabase/migrations/0008_loss_constraints.sql`: `check (avg_ticket >= 0)` y `check (affected_factor >= 0)` en `organizations` — nunca tuvo sentido de negocio que fueran negativos, y no había ninguna barrera de DB que lo impidiera.
+- Comentario corregido en `lib/loss/engine.ts` sobre `recomputeOrgLoss`: decía "recalcula las sucursales activas", pero la query a propósito recalcula **todas** (activas e inactivas) — una sucursal desactivada puede tener historia de checkins/reviews cuyos snapshots de pérdida siguen siendo válidos y no deben congelarse desactualizados ni perderse.
+
+**Seed de demo (`scripts/seed-demo.ts`, `npm run seed:demo`):** org "Pardo's Burgers", 6 sucursales, 1.500 reviews (250 c/u) + análisis 100% sintéticos directo a la DB (mismo patrón que `seed:volume` del Loop 5 — nunca llama a Claude ni a Apify), 60 días de check-ins por sucursal, `avg_ticket=3500`/`affected_factor=1` ya configurados para que la pérdida estimada se vea en la demo sin pasos extra. Cada sucursal tiene una categoría dominante distinta (Palermo/demora, Belgrano/atención, Recoleta/calidad de comida, Caballito/comida fría, Once/limpieza, Flores/precio) con 65% de sesgo en las reviews, **y coherencia con las compensaciones reales**: el `reason_category` de los `compensation_items` coincide con la categoría dominante de la sucursal ~75% de las veces — el dashboard de patrones y el de pérdidas cuentan la misma historia, no dos historias independientes. Idempotente (si una sucursal ya existe, se omite). Corre en <1s (criterio: <5 min). `recomputeOrgLoss` se corre al final del seed para que los `loss_snapshots` ya estén poblados.
+
+**Empty/loading states:** mensaje de "todavía no hay sucursales activas" en el dashboard cuando la org no tiene ninguna; estado de análisis pendiente/fallido visible en `review-card.tsx` (antes esos casos no se distinguían de "sin análisis"); tarjeta "Últimas sincronizaciones" nueva en el detalle de sucursal (estado de las últimas 3 corridas de `sync_jobs`: éxito con stats, en curso, o fallida con el error) — hasta este loop el admin no tenía forma de ver en la UI si una sync había fallado. `loading.tsx` (skeleton) agregado en `/dashboard`, `/checkin`, `/reviews`, `/branches`.
+
+**Responsive check-in (375px) — bug real encontrado con un test, no asumido:** `tests/e2e/responsive.spec.ts` (nuevo) detectó scroll horizontal en `/checkin` a 375px. Causa: `components/nav.tsx` no tenía `flex-wrap` y el bloque de nombre/rol/org competía por espacio con los links en una sola fila. Fix: `flex-wrap` + padding/gaps reducidos en mobile + el bloque de nombre/rol se oculta bajo `sm:` (solo queda "Salir" visible en mobile). Verificación visual adicional con el navegador (Claude Preview a 375px) encontró un segundo bug de layout: los `<label>` de Cantidad/Motivo/Monto en `components/checkin-day-panel.tsx` no tenían `block`, así que quedaban pegados en la misma línea que el input en vez de apilarse arriba — cosmético pero real (labels ilegibles pegados al borde del input en pantallas angostas). Se agregó `block` a los tres.
+
+**Hardening:**
+- `lib/rate-limit.ts`: rate limit simple en memoria (ventana fija por clave), aplicado a `/api/sync-reviews`, `/api/analyze`, `/api/recompute-loss` (5-10 req/60s, protege contra retries en loop sobre APIs pagas) y `/api/invite` (20 req/60s por org, protege contra spam de invitaciones). **Limitación conocida y documentada (README.md):** en Vercel serverless cada instancia de función mantiene su propio estado — no es un contador global entre instancias, es *best-effort*. Suficiente para el MVP; si algún día importa un límite real y compartido, migrar a Upstash/Redis (no se sobre-ingenierizó ahora).
+- Validación zod agregada en `/api/sync-reviews`, `/api/analyze`, `/api/recompute-loss` (body `{orgId?: uuid, branchId?: uuid}`, antes validado a mano con `typeof === "string"`); `/api/invite` ya la tenía desde el Loop 1.
+- `README.md` reescrito con la tabla completa de env vars (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`, `CRON_SECRET`, `APIFY_TOKEN`, `ANTHROPIC_API_KEY`, `REVIEW_PROVIDER`), setup local, cron jobs y la limitación del rate limit en serverless.
+
+**`DEMO.md`:** guión de 10 minutos. Estructura pedida explícitamente por el usuario: primero el dashboard de patrones ("mirá qué se repite en cada sucursal" — tarjetas por sucursal, heatmap), después la operación diaria (check-in del gerente, mostrando de dónde sale la compensación real), y **cierre en la pantalla de pérdidas** (real + estimada, con el modal de metodología abierto) — no en el heatmap.
+
+**Tests y verificación final:**
+- Suite completa: 113 unit/integration (Vitest) + 12 e2e (Playwright) = 125 tests en verde. `npm run build` sin errores ni warnings.
+- Test unitario nuevo para `lib/rate-limit.ts` (permite hasta el límite, rechaza al superarlo, claves distintas no comparten contador).
+- **Lighthouse accesibilidad, medido contra el build de producción** (`npm run build` + `npm run start`, no el dev server, tal como pidió el usuario) usando una sesión autenticada real (cookies de Supabase extraídas con Playwright y pasadas a Lighthouse vía `--extra-headers`): **Dashboard 96/100, Check-in 100/100** (umbral: ≥90). Único audit que no llega a 100 en el dashboard: `color-contrast` — no bloqueante (96 > 90), queda anotado en deuda técnica.
+
 ## Decisiones tomadas
 - **Sección 8 del PRD vs. campos extra del provider Apify:** `isLocalGuide`, `reviewerNumberOfReviews` y `likesCount` llegan en la respuesta del actor y se tipan en `ApifyRawReview`, pero no se persisten en la tabla `reviews` porque esa tabla no los define en la sección 8. Quedan mapeados y disponibles en el código de `lib/providers/mapping.ts` para cuando el loop que implemente el motor de pesos (probablemente el 6) los necesite — no se agregó la columna ahora para no adelantar trabajo fuera de scope.
 - RLS: se usaron funciones `security definer` (`get_user_org_id`, `get_user_role`) en vez de subqueries directas contra `profiles` en su propia policy, para evitar la recursión infinita clásica de Supabase.
@@ -188,6 +212,8 @@ Cambios concretos sobre lo entregado en el cierre original del Loop 2:
 - `classifyBatch` (`lib/analysis/classify.ts`) no chequea `response.stop_reason === "max_tokens"`: si la respuesta se trunca por límite de tokens, el JSON queda incompleto y el error que se propaga (JSON.parse fallido o zod fallido) no deja claro que la causa fue truncamiento. No bloqueante — con lotes de 20 reviews y `max_tokens: 4096` hay margen de sobra — pero si en el futuro se sube el tamaño de lote o el `summary` se vuelve más largo, conviene detectar `stop_reason` explícitamente y dar un mensaje de error específico.
 - `app/(app)/dashboard/page.tsx` hace una query separada por cada par (sucursal, categoría del Top 5) para traer las 2 reviews de ejemplo — con 10 sucursales × 5 categorías serían hasta 50 queries en paralelo (`Promise.all`). Medido con 5 sucursales reales no fue un problema (carga total ~1.2-1.4s, bien debajo del umbral de 2s), pero si el número de sucursales activas crece mucho en producción, conviene reemplazarlo por una sola query con `DISTINCT ON`/lateral join en vez de N llamadas.
 - Warning de consola (no funcional, no bloqueante): "Base UI: A component is changing the default value state of an uncontrolled FieldControl after being initialized" en `LossParamsForm` — aparece porque `revalidatePath("/settings")` re-renderiza el formulario con un `defaultValue` distinto después de guardar. Cosmético; para eliminarlo habría que convertir esos inputs a controlados, no se justificó el esfuerzo en este loop.
+- Lighthouse accesibilidad del dashboard (96/100, por encima del umbral de 90) señala un audit de `color-contrast` sin resolver — algún texto/fondo por debajo del contraste mínimo recomendado. No bloqueante para el criterio del Loop 7, pero si se prioriza accesibilidad AA estricta en un loop futuro, conviene revisar los tonos de `text-muted-foreground` sobre fondos claros.
+- Rate limit en memoria (`lib/rate-limit.ts`) es por-instancia en serverless, no un límite global — ver limitación documentada en `README.md` y en el resumen del Loop 7. Migrar a Upstash/Redis si algún día importa un límite real compartido entre instancias.
 
 ## Bloqueos
 - (ninguno pendiente — el bloqueo de Docker/Homebrew se resolvió con instalación manual del usuario)
