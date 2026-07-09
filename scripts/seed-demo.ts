@@ -152,6 +152,73 @@ async function seedDemo() {
     await admin.from("branch_managers").insert({ branch_id: branchId, profile_id: managerId });
 
     // --- Reviews + análisis sintético (nunca llama a Claude ni Apify) ---
+    // Frases humanas por categoría: son lo que se LEE en la demo (quotes del
+    // panel y cards de Reseñas) — nunca slugs.
+    const NEGATIVE_PHRASES: Record<string, string[]> = {
+      demora: [
+        "Esperamos más de 40 minutos para que llegue la comida.",
+        "Tardaron muchísimo en tomarnos el pedido, el lugar ni estaba lleno.",
+        "Todo rico pero la demora fue exagerada.",
+      ],
+      atencion: [
+        "Nos atendieron de mala gana, ni nos miraban.",
+        "Pedimos la cuenta tres veces y nadie venía.",
+        "El mozo nos trató pésimo, no volvemos.",
+      ],
+      calidad_comida: [
+        "Las papas estaban recocidas y la hamburguesa sin gusto.",
+        "La carne no estaba en su punto, muy decepcionante.",
+        "Bajó mucho la calidad, antes era otra cosa.",
+      ],
+      comida_fria: [
+        "La comida llegó fría, tuvimos que pedir que la recalienten.",
+        "Las hamburguesas llegaron heladas, incomibles.",
+        "Todo frío, se nota que quedó esperando en la cocina.",
+      ],
+      limpieza: [
+        "El baño estaba sucio y la mesa pegajosa.",
+        "Los vasos vinieron con marcas, da impresión.",
+        "El piso del local estaba muy sucio.",
+      ],
+      precio: [
+        "Muy caro para lo que ofrecen.",
+        "Los precios subieron una barbaridad, no lo vale.",
+        "Carísimo, hay mejores opciones por menos plata.",
+      ],
+      pedido_incorrecto: [
+        "Pedí sin cebolla y vino con cebolla, tuve que devolverla.",
+        "Me trajeron otro pedido y encima tardaron en cambiarlo.",
+        "Faltaba la mitad de lo que pedimos por delivery.",
+      ],
+      ambiente: [
+        "La música estaba tan fuerte que no podíamos hablar.",
+        "Las mesas muy apretadas, incómodo para comer.",
+        "Hacía un calor insoportable adentro del local.",
+      ],
+      otro: [
+        "Mala experiencia en general, no volvería.",
+        "Varias cosas para mejorar, no fue lo que esperaba.",
+      ],
+    };
+    const POSITIVE_PHRASES = [
+      "Excelente todo, volvemos seguro.",
+      "Muy rica la comida y la atención de diez.",
+      "Rápido, rico y buena onda. Recomendado.",
+      "Gran experiencia, las mejores hamburguesas de la zona.",
+    ];
+    const CATEGORY_SUMMARY: Record<string, string> = {
+      demora: "Queja por demoras en el servicio.",
+      atencion: "Queja por mala atención del personal.",
+      calidad_comida: "Queja por la calidad de la comida.",
+      comida_fria: "Queja porque la comida llegó fría.",
+      limpieza: "Queja por falta de limpieza.",
+      precio: "Queja por precios altos.",
+      pedido_incorrecto: "Queja por pedido equivocado o incompleto.",
+      ambiente: "Queja por ruido o incomodidad del local.",
+      otro: "Queja general sobre la experiencia.",
+    };
+    const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
     const reviewRows = [];
     const analysisRows = [];
     for (let i = 0; i < REVIEWS_PER_BRANCH; i++) {
@@ -171,8 +238,8 @@ async function seedDemo() {
         author_name: `Cliente ${i}`,
         rating,
         text: isNegative
-          ? `Problema de ${category} en ${branchDef.name}.`
-          : `Muy buena experiencia en ${branchDef.name}.`,
+          ? pick(NEGATIVE_PHRASES[category] ?? NEGATIVE_PHRASES.otro)
+          : pick(POSITIVE_PHRASES),
         review_date: daysAgo(Math.floor(Math.random() * REVIEW_LOOKBACK_DAYS)),
         analysis_status: "done",
       });
@@ -182,7 +249,9 @@ async function seedDemo() {
         categories: isNegative ? [category] : [],
         severity,
         mentions_compensation: isNegative && Math.random() < 0.15,
-        summary: isNegative ? `Reseña sobre ${category}.` : "Reseña positiva.",
+        summary: isNegative
+          ? (CATEGORY_SUMMARY[category] ?? CATEGORY_SUMMARY.otro)
+          : "Reseña positiva.",
         model: "seed-demo:synthetic",
       });
     }

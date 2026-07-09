@@ -22,7 +22,7 @@ export function MethodologyModal({
       </Button>
       <dialog
         ref={ref}
-        className="modal-pop max-w-md rounded-lg border bg-popover p-6 text-sm text-popover-foreground shadow-lg backdrop:bg-black/50"
+        className="modal-pop m-auto max-w-md rounded-lg border bg-popover p-6 text-sm text-popover-foreground shadow-lg backdrop:bg-black/50"
       >
         <h3 className="mb-3 font-medium">¿Cómo se calcula la pérdida?</h3>
         <p className="mb-2">

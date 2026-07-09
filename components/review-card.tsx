@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import type { ProblemCategory, Sentiment } from "@/lib/analysis/classify";
 import { categoryLabel, SEVERITY_DOT_CLASS, sentimentLabel, severityLabel } from "@/lib/labels";
-import { formatRating } from "@/lib/format";
+import { formatHumanDate, formatRating } from "@/lib/format";
 import { Stars } from "@/components/stars";
 
 const SENTIMENT_CLASS: Record<Sentiment, string> = {
@@ -39,7 +39,8 @@ export function ReviewCard({ review }: { review: ReviewCardData }) {
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          {review.branchName} · {review.reviewDate}
+          {review.branchName}
+          {review.reviewDate ? ` · ${formatHumanDate(review.reviewDate)}` : ""}
         </p>
         {review.text && <p className="text-sm">{review.text}</p>}
 

@@ -12,8 +12,8 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
       href={href}
       className={
         active
-          ? "text-sm font-medium text-primary"
-          : "text-sm text-muted-foreground hover:text-foreground"
+          ? "whitespace-nowrap text-sm font-medium text-primary"
+          : "whitespace-nowrap text-sm text-muted-foreground hover:text-foreground"
       }
     >
       {children}
@@ -36,8 +36,8 @@ export function Nav({ profile }: { profile: CurrentProfile }) {
   const homeLabel = profile.role === "manager" ? "Registro del día" : "Panel";
 
   return (
-    <nav className="flex flex-wrap items-center justify-between gap-y-2 border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
-      <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+    <nav className="flex items-center justify-between gap-3 border-b bg-card px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex min-w-0 items-center gap-4 overflow-x-auto sm:gap-6">
         <span className="font-semibold">Contame</span>
         <NavLink href={homeHref} active={pathname.startsWith(homeHref)}>
           {homeLabel}

@@ -244,7 +244,7 @@ export default async function DashboardPage({
                   )}
                   <span className="text-muted-foreground">({current?.review_count ?? 0} reseñas)</span>
                   {current?.avg_rating != null &&
-                    (trend.direction === "flat" ? (
+                    (trend.direction === "flat" || Math.abs(trend.delta) < 0.05 ? (
                       <span className="text-muted-foreground">sin cambios</span>
                     ) : (
                       <span className={trend.direction === "up" ? "text-emerald-700" : "text-red-700"}>
